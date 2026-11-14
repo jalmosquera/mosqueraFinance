@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { bootstrapSession, getFamilies, getFamilyData, isForbidden, isUnauthenticated, login, logout } from "./api";
+import { bootstrapSession, getFamilies, getFamilyData, getMemberships, isForbidden, isUnauthenticated, login, logout } from "./api";
 import { createExportImage, downloadImage } from "./exportImage";
 import { createExportPayload } from "./exportPayload";
 import { formatDate, formatMonth } from "./formatDate";
@@ -103,6 +103,35 @@ function LoginScreen({ onAuthenticated }) {
   );
 }
 
+function FirstRunOnboarding({ isAdmin, onConfigure, reviewed, setReviewed }) {
+  if (!isAdmin) {
+    return (
+      <section className="rounded-[2rem] border border-amber-900/60 bg-amber-950/20 p-6" role="status">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300">Acceso limitado</p>
+        <h2 className="mt-2 text-lg font-semibold text-white">La configuración inicial la administra Jalberth</h2>
+        <p className="mt-3 text-sm leading-6 text-slate-400">Vas a ver únicamente los datos compartidos y los tuyos que estén autorizados. Los ingresos, gastos, ahorros, proyecciones y exportaciones privados de Jalberth no se muestran en tu cuenta.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-[2rem] border border-emerald-900/50 bg-emerald-950/20 p-6">
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">Configuración inicial</p>
+      <h2 className="mt-2 text-xl font-semibold text-white">Primero definí el plan, después registrá lo real</h2>
+      <div className="mt-4 space-y-3 text-sm leading-6 text-slate-400">
+        <p>Los pronósticos describen importes previstos y sirven para planificar. No son movimientos confirmados ni modifican los saldos reales.</p>
+        <p>Los movimientos reales se registran cuando ocurren. Conservan su historial y se corrigen con operaciones auditadas, no eliminándolos.</p>
+      </div>
+      <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-xl border border-slate-700 bg-slate-950/50 p-4 text-sm leading-5 text-slate-300">
+        <input checked={reviewed} className="mt-0.5 h-5 min-h-0 w-5 shrink-0 accent-emerald-300" onChange={(event) => setReviewed(event.target.checked)} type="checkbox" />
+        <span>Revisé la diferencia entre pronósticos y movimientos reales. Confirmo que voy a verificar la información antes de guardarla.</span>
+      </label>
+      <button className="mt-4 w-full rounded-xl bg-emerald-300 px-4 py-3 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60" disabled={!reviewed} onClick={onConfigure} type="button">Ir a la configuración inicial</button>
+      <p className="mt-3 text-xs leading-5 text-slate-500">La configuración inicial crea solo datos de planificación; los movimientos reales se registran por separado.</p>
+    </section>
+  );
+}
+
 function ExportCards({ data, familyName, sessionUser }) {
   const [recipient, setRecipient] = useState("Raiza");
   const [status, setStatus] = useState("idle");
@@ -163,6 +192,9 @@ export function App() {
   const [state, setState] = useState("loading");
   const [session, setSession] = useState({ status: "loading", user: null });
   const [reloadKey, setReloadKey] = useState(0);
+  const [memberships, setMemberships] = useState([]);
+  const [membershipsLoadedFor, setMembershipsLoadedFor] = useState("");
+  const [initialConfigurationReviewed, setInitialConfigurationReviewed] = useState(false);
 
   function loadFamilies() {
     const controller = new AbortController();
@@ -234,6 +266,29 @@ export function App() {
     return () => controller.abort();
   }, [familyId, reloadKey, session.status]);
 
+  useEffect(() => {
+    if (session.status !== "authenticated" || !familyId) {
+      setMemberships([]);
+      setMembershipsLoadedFor("");
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setMemberships([]);
+    setMembershipsLoadedFor("");
+    getMemberships(familyId, controller.signal)
+      .then((response) => {
+        setMemberships(response);
+        setMembershipsLoadedFor(familyId);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setMembershipsLoadedFor(familyId);
+        }
+      });
+    return () => controller.abort();
+  }, [familyId, session.status]);
+
   async function signOut() {
     try {
       await logout();
@@ -253,6 +308,15 @@ export function App() {
   const selectedFamily = families.find((family) => String(family.id) === familyId);
   const showProjection = activeTab === "Proyección";
   const visibleData = loadedFamilyId === familyId ? data : null;
+  const currentMembership = memberships.find((membership) => membership.user_id === session.user?.id && membership.is_active);
+  const isAdmin = currentMembership?.role === "ADMIN";
+  const isFirstRun = Boolean(visibleData) && !visibleData.accounts.length && !visibleData.categories.length && !visibleData.incomeForecasts.length && !visibleData.expenseForecasts.length;
+  const shouldShowOnboarding = state === "ready" && visibleData && membershipsLoadedFor === familyId && isFirstRun && !initialConfigurationReviewed;
+
+  function openInitialConfiguration() {
+    setActiveSection("Ajustes");
+    setInitialConfigurationReviewed(true);
+  }
 
   if (session.status === "loading") {
     return <main aria-live="polite" className="flex min-h-dvh items-center justify-center bg-slate-950 px-5 text-sm font-medium text-slate-300" role="status">Preparando sesión segura...</main>;
@@ -294,13 +358,15 @@ export function App() {
         </div>}
 
         <div className="mt-6" id="financial-panel" role={activeSection === "Ajustes" ? undefined : "tabpanel"} aria-labelledby={activeSection === "Ajustes" ? undefined : `financial-tab-${activeTab}`}>
-          {activeSection === "Ajustes" && familyId && <Settings accounts={visibleData?.accounts || []} categories={visibleData?.categories || []} expenseForecasts={visibleData?.expenseForecasts || []} families={families} familyId={familyId} incomeForecasts={visibleData?.incomeForecasts || []} onChanged={reloadFamilyData} onFamilyChange={setFamilyId} onLogout={signOut} sessionUser={session.user} />}
+          {activeSection === "Ajustes" && shouldShowOnboarding && <FirstRunOnboarding isAdmin={isAdmin} onConfigure={openInitialConfiguration} reviewed={initialConfigurationReviewed} setReviewed={setInitialConfigurationReviewed} />}
+          {activeSection === "Ajustes" && familyId && !shouldShowOnboarding && <Settings accounts={visibleData?.accounts || []} categories={visibleData?.categories || []} expenseForecasts={visibleData?.expenseForecasts || []} families={families} familyId={familyId} incomeForecasts={visibleData?.incomeForecasts || []} onChanged={reloadFamilyData} onFamilyChange={setFamilyId} onLogout={signOut} sessionUser={session.user} />}
           {activeSection !== "Ajustes" && state === "loading" && <section className="rounded-[2rem] border border-slate-900 bg-slate-900/40 p-5" aria-live="polite" role="status"><p className="text-sm font-medium text-slate-300">Cargando información protegida</p><div className="mt-4 space-y-3" aria-hidden="true"><div className="h-3 w-2/5 animate-pulse motion-reduce:animate-none rounded-full bg-slate-800" /><div className="h-3 w-full animate-pulse motion-reduce:animate-none rounded-full bg-slate-800" /></div></section>}
           {activeSection !== "Ajustes" && state === "unauthenticated" && <EmptyState>Tu sesión no está disponible. Iniciá sesión para consultar la información autorizada.</EmptyState>}
           {activeSection !== "Ajustes" && state === "forbidden" && <section className="rounded-[2rem] border border-amber-900/60 bg-amber-950/20 p-6" role="alert"><h2 className="text-lg font-semibold text-white">No tenés acceso a esta información</h2><p className="mt-2 text-sm leading-6 text-slate-400">Por privacidad, no mostramos detalles de datos que no están autorizados para tu perfil.</p><button type="button" onClick={retry} className="mt-5 rounded-xl bg-amber-300 px-4 py-2 text-sm font-semibold text-slate-950">Reintentar</button></section>}
           {activeSection !== "Ajustes" && state === "error" && <section className="rounded-[2rem] border border-rose-900/60 bg-rose-950/30 p-6" role="alert"><h2 className="text-lg font-semibold text-white">No se pudo cargar la información</h2><p className="mt-2 text-sm leading-6 text-slate-400">Verificá la conexión e intentá nuevamente.</p><button type="button" onClick={retry} className="mt-5 rounded-xl bg-rose-300 px-4 py-2 text-sm font-semibold text-slate-950">Reintentar</button></section>}
           {activeSection !== "Ajustes" && state === "empty" && <EmptyState>No tenés una familia autorizada para consultar.</EmptyState>}
-          {activeSection !== "Ajustes" && state === "ready" && visibleData && <div className="space-y-5">
+          {activeSection !== "Ajustes" && shouldShowOnboarding && <FirstRunOnboarding isAdmin={isAdmin} onConfigure={openInitialConfiguration} reviewed={initialConfigurationReviewed} setReviewed={setInitialConfigurationReviewed} />}
+          {activeSection !== "Ajustes" && state === "ready" && visibleData && !shouldShowOnboarding && <div className="space-y-5">
             {showProjection ? <Records title="Proyección" items={visibleData.projection.months}>{visibleData.projection.months.map((month) => <MoneyRecord key={month.month} record={{ description: formatMonth(month.month) }} subtitle={`Ingresos ${formatMoney(month.income)} · Gastos ${formatMoney(month.expenses)} · Ahorro ${formatMoney(month.savings_contribution)}`} amount={month.net_after_savings} />)}</Records> : <>
               <ExportCards data={visibleData} familyName={selectedFamily?.name || "Familia"} sessionUser={session.user} />
               <Records title="Cuentas" items={visibleData.accounts}>{visibleData.accounts.map((account) => <MoneyRecord key={account.id} record={{ description: account.name }} />)}</Records>
