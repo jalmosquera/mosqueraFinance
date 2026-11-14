@@ -32,6 +32,21 @@ Inspect service health with:
 docker compose ps
 ```
 
+Run the non-destructive runtime validation after the stack is healthy:
+
+```sh
+./scripts/validate-runtime.sh
+```
+
+The check never builds, starts, stops, restarts, restores, or deletes a service or database. It verifies that `db`, `backend`, and `frontend` are Docker-healthy, requests `/healthz` through the published Nginx proxy, creates a temporary custom-format dump, and verifies its restore catalog with `pg_restore --list`. The temporary dump is removed when the command exits. If Docker, Compose, the daemon, a service, or the proxy is unavailable, it exits non-zero with the relevant status and recent service logs.
+
+Runtime validation checklist:
+
+- Confirm `docker info` succeeds and the intended Compose project is already running.
+- Run `./scripts/validate-runtime.sh` from the repository root.
+- Investigate any reported service logs before attempting a deployment or restore.
+- Test an actual restore only on a separate non-production Compose project or host, using the documented explicit confirmation.
+
 The only published port is the frontend's loopback `APP_PORT`. Do not add a `ports` entry to `db` or bind the frontend to all interfaces; the TLS proxy should be the only Internet-facing component.
 
 ## Backups And Restore
