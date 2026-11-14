@@ -4,7 +4,7 @@ Private family-finance application for the Mosquera Alves family.
 
 ## Status
 
-The repository structure and OpenCode multi-agent configuration are present. The backend provides users, family memberships, authorization boundaries, immutable audit logs, private/shared logical accounts, and categories. Financial movements and frontend functionality remain pending.
+The application provides family memberships, server-enforced authorization boundaries, immutable audited financial corrections, budgets, savings, projections, notification preferences, and a React/Vite PWA. Session authentication is CSRF-protected and its login throttle is stored in PostgreSQL so it is shared across backend workers. GitHub Actions verifies backend lint/tests, frontend syntax/tests, and Compose configuration on pushes and pull requests.
 
 ## Documentation
 

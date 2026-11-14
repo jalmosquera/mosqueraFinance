@@ -1,25 +1,57 @@
 import hashlib
 import json
+from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
-from django.core.cache import cache
+from django.db import IntegrityError, transaction
 from django.http import HttpRequest, JsonResponse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
+from apps.accounts.models import LoginThrottle
 
-def _attempt_key(request: HttpRequest, username: str) -> str:
+
+def _attempt_fingerprint(request: HttpRequest, username: str) -> str:
     fingerprint = f"{request.META.get('REMOTE_ADDR', '')}:{username.lower()}"
-    return f"login-attempts:{hashlib.sha256(fingerprint.encode()).hexdigest()}"
+    return hashlib.sha256(fingerprint.encode()).hexdigest()
 
 
 def _is_rate_limited(request: HttpRequest, username: str) -> bool:
-    key = _attempt_key(request, username)
+    fingerprint = _attempt_fingerprint(request, username)
     limit = settings.LOGIN_ATTEMPT_LIMIT
-    if cache.add(key, 1, timeout=settings.LOGIN_ATTEMPT_WINDOW_SECONDS):
-        return False
-    return cache.incr(key) > limit
+    now = timezone.now()
+    window_start = now - timedelta(seconds=settings.LOGIN_ATTEMPT_WINDOW_SECONDS)
+
+    with transaction.atomic():
+        try:
+            throttle = LoginThrottle.objects.select_for_update().get(
+                fingerprint=fingerprint
+            )
+        except LoginThrottle.DoesNotExist:
+            try:
+                # A concurrent first attempt may insert the same fingerprint.
+                with transaction.atomic():
+                    LoginThrottle.objects.create(
+                        fingerprint=fingerprint,
+                        attempts=1,
+                        window_started_at=now,
+                    )
+            except IntegrityError:
+                throttle = LoginThrottle.objects.select_for_update().get(
+                    fingerprint=fingerprint
+                )
+            else:
+                return False
+
+        if throttle.window_started_at <= window_start:
+            throttle.attempts = 1
+            throttle.window_started_at = now
+        else:
+            throttle.attempts += 1
+        throttle.save(update_fields=["attempts", "window_started_at"])
+        return throttle.attempts > limit
 
 
 @require_GET
@@ -53,7 +85,9 @@ def login_view(request: HttpRequest) -> JsonResponse:
     if user is None:
         return JsonResponse({"detail": "Invalid credentials."}, status=400)
 
-    cache.delete(_attempt_key(request, username))
+    LoginThrottle.objects.filter(
+        fingerprint=_attempt_fingerprint(request, username)
+    ).delete()
     login(request, user)
     return JsonResponse({"user": _user_data(user)})
 

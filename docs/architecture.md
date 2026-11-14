@@ -2,7 +2,7 @@
 
 ## Implementation Status
 
-The backend provides the custom user model, family memberships, authenticated family endpoints, server-enforced family scoping, immutable audit logs, and private/shared logical accounts and categories. Financial movements, budgets, savings, projections, frontend, and deployment infrastructure remain pending.
+The application provides the custom user model, family memberships, authenticated family endpoints, server-enforced family scoping, immutable audit logs, private/shared financial records, movements, budgets, savings, projections, notification preferences, a React/Vite PWA, and Docker Compose deployment infrastructure. GitHub Actions verifies backend lint/tests, frontend syntax/tests, and Compose configuration.
 
 ## System
 
@@ -32,6 +32,10 @@ Recurring forecasts are versioned by effective date. A single occurrence can be 
 ## Authorization
 
 Jalberth administers authorized family data. Raiza manages her own private data and authorized shared expenses, but cannot query or infer any private Jalberth data. The backend filters querysets before retrieving objects and enforces object-level checks for writes, projections, exports, and graphs.
+
+## Authentication Throttling
+
+Login attempts are limited per hashed client-IP and case-insensitive username. The throttle window is persisted in PostgreSQL and updated transactionally with row locking, so it remains effective across Gunicorn workers and does not require Redis. A successful login clears its throttle row.
 
 ## Initial Forecasts
 

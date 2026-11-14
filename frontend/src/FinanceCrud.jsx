@@ -12,6 +12,8 @@ import {
 } from "./api";
 import { formatDate } from "./formatDate";
 import { formatMoney } from "./formatMoney";
+import { hasExactAllocationTotal } from "./financeValidation";
+import { requiresPrivacyConfirmation } from "./privacy";
 
 const fieldClass = "mt-2 block w-full rounded-xl border border-slate-700 bg-black px-3 py-3 text-base text-white outline-none focus:border-orange-300";
 const buttonClass = "rounded-xl bg-orange-300 px-3 py-3 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-60";
@@ -22,17 +24,6 @@ function Panel({ title, children }) {
 
 function Message({ error, success }) {
   return error ? <p className="mt-3 text-sm text-rose-200" role="alert">{error}</p> : success ? <p className="mt-3 text-sm text-orange-200" role="status">{success}</p> : null;
-}
-
-function toCents(value) {
-  const match = String(value).trim().match(/^(\d+)(?:[,.](\d{1,2}))?$/);
-  if (!match) return null;
-  return BigInt(match[1]) * 100n + BigInt((match[2] || "").padEnd(2, "0"));
-}
-
-function exactAllocationTotal(amount, allocations) {
-  const total = toCents(amount);
-  return total !== null && allocations.length > 0 && allocations.every((allocation) => toCents(allocation.amount) !== null) && allocations.reduce((sum, allocation) => sum + toCents(allocation.amount), 0n) === total;
 }
 
 function AllocationFields({ allocations, memberships, onChange, label = "Asignaciones", ownerField = "member_id" }) {
@@ -51,8 +42,8 @@ function RecordForm({ type, accounts, categories, memberships, sessionUser, reco
   function setValue(name, value) { setForm((current) => ({ ...current, [name]: value })); }
   async function submit(event) {
     event.preventDefault();
-    if (expense && form.scope === "shared" && !exactAllocationTotal(form.amount, form.allocations)) { setError("Las asignaciones deben sumar exactamente el importe, sin redondeos."); return; }
-    if (form.scope === "shared" && !privacyConfirmed) { setError("Confirmá el impacto de privacidad antes de guardar un movimiento compartido."); return; }
+    if (expense && form.scope === "shared" && !hasExactAllocationTotal(form.amount, form.allocations)) { setError("Las asignaciones deben sumar exactamente el importe, sin redondeos."); return; }
+    if (requiresPrivacyConfirmation(form.scope, privacyConfirmed)) { setError("Confirmá el impacto de privacidad antes de guardar un movimiento compartido."); return; }
     setSaving(true); setError("");
     const payload = { description: form.description, amount: String(form.amount).replace(",", "."), occurred_on: form.occurred_on, account_id: Number(form.account_id), category_id: Number(form.category_id), owner_id: form.scope === "shared" ? null : sessionUser.id };
     if (expense) payload.allocations = form.scope === "shared" ? form.allocations.map((item) => ({ member_id: Number(item.member_id), amount: String(item.amount).replace(",", ".") })) : [];
@@ -97,7 +88,7 @@ function SavingsManager({ goals, movements, sessionUser, familyId, onChanged }) 
 function MatiasManager({ fund, movements, memberships, familyId, isAdmin, onChanged }) {
   const [target, setTarget] = useState(fund?.target_amount || ""); const [movement, setMovement] = useState({ kind: "REPLENISHMENT", amount: "", occurred_on: "", description: "", allocations: [] }); const [error, setError] = useState("");
   async function saveFund(event) { event.preventDefault(); try { if (fund) await updateMatiasFund(familyId, { target_amount: target.replace(",", "."), projected_balance: fund.projected_balance }); else await createMatiasFund(familyId, { target_amount: target.replace(",", "."), projected_balance: "0.00" }); onChanged(); } catch (requestError) { setError(apiErrorMessage(requestError)); } }
-  async function saveMovement(event) { event.preventDefault(); if (!exactAllocationTotal(movement.amount, movement.allocations)) { setError("Las asignaciones deben sumar exactamente el importe."); return; } try { await createMovement(familyId, "matias-fund-movements", { ...movement, amount: movement.amount.replace(",", "."), allocations: movement.allocations.map((item) => ({ contributor_id: Number(item.contributor_id), amount: item.amount.replace(",", ".") })) }); onChanged(); } catch (requestError) { setError(apiErrorMessage(requestError)); } }
+  async function saveMovement(event) { event.preventDefault(); if (!hasExactAllocationTotal(movement.amount, movement.allocations)) { setError("Las asignaciones deben sumar exactamente el importe."); return; } try { await createMovement(familyId, "matias-fund-movements", { ...movement, amount: movement.amount.replace(",", "."), allocations: movement.allocations.map((item) => ({ contributor_id: Number(item.contributor_id), amount: item.amount.replace(",", ".") })) }); onChanged(); } catch (requestError) { setError(apiErrorMessage(requestError)); } }
   return <Panel title="Fondo Matías">{!fund && !isAdmin ? <p className="mt-2 text-sm text-slate-400">El fondo todavía no fue configurado.</p> : <>{fund && <p className="mt-2 text-sm text-slate-300">Saldo real {formatMoney(fund.real_balance)}. Las reposiciones son movimientos del fondo, no un segundo gasto de consumo.</p>}{isAdmin && <form className="mt-4 flex gap-2" onSubmit={saveFund}><input className={fieldClass} inputMode="decimal" onChange={(event) => setTarget(event.target.value)} placeholder="Objetivo" required value={target} /><button className={buttonClass} type="submit">{fund ? "Actualizar" : "Crear"}</button></form>}{fund && <form className="mt-4 space-y-3 border-t border-slate-800 pt-4" onSubmit={saveMovement}><select className={fieldClass} onChange={(event) => setMovement({ ...movement, kind: event.target.value })} value={movement.kind}><option value="INITIAL_CONTRIBUTION">Aporte inicial</option><option value="REPLENISHMENT">Reposición</option><option value="DISBURSEMENT">Desembolso</option></select><input className={fieldClass} inputMode="decimal" onChange={(event) => setMovement({ ...movement, amount: event.target.value })} placeholder="Importe" required value={movement.amount} /><input className={fieldClass} onChange={(event) => setMovement({ ...movement, occurred_on: event.target.value })} required type="date" value={movement.occurred_on} /><input className={fieldClass} onChange={(event) => setMovement({ ...movement, description: event.target.value })} placeholder="Descripción" value={movement.description} /><AllocationFields allocations={movement.allocations} memberships={memberships} onChange={(allocations) => setMovement({ ...movement, allocations })} label="Aportes al fondo" ownerField="contributor_id" /><button className={buttonClass} type="submit">Registrar fondo</button></form>}<Message error={error} /></>}</Panel>;
 }
 

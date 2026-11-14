@@ -2,10 +2,10 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from django.core.cache import cache
 from django.test import Client, override_settings
 from rest_framework import status
 
+from apps.accounts.models import LoginThrottle
 from apps.audit.models import AuditLog
 from apps.expenses.models import ExpenseAllocation, ExpenseForecast, ExpenseMovement
 from apps.finance.models import Category, LogicalAccount
@@ -18,9 +18,9 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture(autouse=True)
 def clear_login_attempts():
-    cache.clear()
+    LoginThrottle.objects.all().delete()
     yield
-    cache.clear()
+    LoginThrottle.objects.all().delete()
 
 
 @pytest.fixture
