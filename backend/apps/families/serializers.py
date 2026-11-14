@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Family, FamilyMembership
+from .models import Family, FamilyMembership, UserNotificationPreference
 
 
 class FamilySerializer(serializers.ModelSerializer):
@@ -44,4 +44,16 @@ class MembershipUpdateSerializer(serializers.Serializer):
     def validate(self, attrs):
         if not attrs:
             raise serializers.ValidationError("Provide role or is_active.")
+        return attrs
+
+
+class UserNotificationPreferenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserNotificationPreference
+        fields = ("is_enabled", "reminder_time", "permission", "updated_at")
+        read_only_fields = ("updated_at",)
+
+    def validate(self, attrs):
+        if not attrs:
+            raise serializers.ValidationError("Provide at least one notification preference.")
         return attrs

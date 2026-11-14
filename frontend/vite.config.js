@@ -7,8 +7,11 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    VitePWA({
-      registerType: "autoUpdate",
+      VitePWA({
+        strategies: "injectManifest",
+        srcDir: "src",
+        filename: "sw.js",
+        registerType: "autoUpdate",
       includeAssets: ["icon-192.svg", "icon-512.svg"],
       manifest: {
         name: "Mosquera Finance",
@@ -22,18 +25,10 @@ export default defineConfig({
           { src: "icon-192.svg", sizes: "192x192", type: "image/svg+xml", purpose: "any" },
           { src: "icon-512.svg", sizes: "512x512", type: "image/svg+xml", purpose: "any" }
         ]
-      },
-      workbox: {
-        globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
-        navigateFallbackDenylist: [/^\/api(?:\/|$)/],
-        runtimeCaching: [
-          {
-            urlPattern: /\/api(?:\/|$)/,
-            handler: "NetworkOnly",
-            method: "GET"
-          }
-        ]
-      }
+        },
+        injectManifest: {
+          globPatterns: ["**/*.{js,css,html,ico,png,svg}"]
+        }
     })
   ],
   server: {

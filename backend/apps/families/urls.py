@@ -6,9 +6,11 @@ from .views import (
     FamilyMembershipDetailView,
     FamilyMembershipListView,
     InitialForecastConfigurationView,
+    UserNotificationPreferenceView,
 )
 
 urlpatterns = [
+    path("families/<int:family_pk>/notification-preferences/", UserNotificationPreferenceView.as_view(), name="user-notification-preference"),
     path("families/<int:family_pk>/initial-forecast-configuration/", InitialForecastConfigurationView.as_view(), name="initial-forecast-configuration"),
     path("families/", FamilyListView.as_view(), name="family-list"),
     path("families/<int:pk>/", FamilyDetailView.as_view(), name="family-detail"),

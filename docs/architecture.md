@@ -21,6 +21,10 @@ Mosquera Finance is a modular Django monolith backed by PostgreSQL. A React/Vite
 - `projections`: twelve-month read-only scenarios.
 - `audit`: immutable business audit records.
 
+## Local Notifications
+
+Notification preferences are stored per authenticated user and authorized family. Browser permission is requested only from an explicit user action. The PWA schedules generic local reminders while it remains open; it sends no financial data to the service worker and has no push provider or paid dependency. Delivery on an Apple Watch is not supported or promised and requires validation on a configured physical device.
+
 ## Temporal Rules
 
 Recurring forecasts are versioned by effective date. A single occurrence can be overridden without changing its recurrence. Confirmed movements are corrected through a linked reversal and replacement in one database transaction. Closed budget months remain historical unless an explicit, audited correction is made.

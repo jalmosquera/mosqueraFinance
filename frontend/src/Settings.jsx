@@ -5,12 +5,15 @@ import {
   deleteFamilyRecord,
   generatePaymentObligations,
   getMemberships,
+  getNotificationPreference,
   getPaymentObligations,
   settlePaymentObligation,
+  updateNotificationPreference,
   updateFamilyRecord,
   voidPaymentObligation
 } from "./api";
 import { formatMoney } from "./formatMoney";
+import { browserPermission, clearLocalReminder, preferencePermission, requestBrowserPermission, scheduleLocalReminder } from "./notifications";
 
 const fieldClass = "mt-2 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-base text-white outline-none focus:border-emerald-300";
 const secondaryButtonClass = "rounded-xl border border-slate-700 px-3 py-2 text-sm font-semibold text-slate-200 disabled:cursor-not-allowed disabled:opacity-50";
@@ -33,6 +36,68 @@ function OwnerField({ value, onChange, disabled = false }) {
 
 function Panel({ title, children }) {
   return <section className="rounded-[2rem] border border-slate-800 bg-slate-900/70 p-5 shadow-2xl shadow-slate-950/20"><h2 className="text-lg font-semibold text-white">{title}</h2>{children}</section>;
+}
+
+function NotificationPreferences({ familyId }) {
+  const [preference, setPreference] = useState(null);
+  const [permission, setPermission] = useState(browserPermission());
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getNotificationPreference(familyId, controller.signal)
+      .then((response) => setPreference(response))
+      .catch(() => setError("No se pudieron cargar las preferencias de recordatorios."));
+    return () => controller.abort();
+  }, [familyId]);
+
+  useEffect(() => {
+    if (preference?.is_enabled && permission === "granted") {
+      scheduleLocalReminder(preference.reminder_time);
+    } else {
+      clearLocalReminder();
+    }
+    return clearLocalReminder;
+  }, [permission, preference]);
+
+  async function save(next) {
+    setSaving(true);
+    setError("");
+    try {
+      const response = await updateNotificationPreference(familyId, next);
+      setPreference(response);
+    } catch (requestError) {
+      setError(apiErrorMessage(requestError));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function enable() {
+    const nextPermission = await requestBrowserPermission();
+    setPermission(nextPermission);
+    if (nextPermission !== "granted") {
+      setError(nextPermission === "unsupported" ? "Este navegador no admite notificaciones." : "El permiso de notificaciones no fue concedido.");
+      await save({ is_enabled: false, permission: preferencePermission(nextPermission) });
+      return;
+    }
+    await save({ is_enabled: true, permission: "GRANTED", reminder_time: preference.reminder_time || "09:00" });
+  }
+
+  if (!preference) return <Panel title="Recordatorios"><p className="mt-2 text-sm text-slate-400">Cargando preferencias...</p><Message error={error} /></Panel>;
+  const isGranted = permission === "granted";
+  return <Panel title="Recordatorios privados">
+    <p className="mt-2 text-sm leading-6 text-slate-400">Activá recordatorios locales en este dispositivo. El aviso usa texto genérico y no incluye importes, cuentas ni movimientos.</p>
+    <p className="mt-3 text-xs font-medium text-slate-500">Permiso del navegador: {permission === "granted" ? "concedido" : permission === "denied" ? "bloqueado" : permission === "unsupported" ? "no compatible" : "pendiente"}.</p>
+    {preference.is_enabled && isGranted && <label className="mt-4 block text-sm font-medium text-slate-300">Hora del recordatorio<input className={fieldClass} onChange={(event) => setPreference((current) => ({ ...current, reminder_time: event.target.value }))} type="time" value={preference.reminder_time || "09:00"} /></label>}
+    <div className="mt-4 grid grid-cols-2 gap-3">
+      {!preference.is_enabled ? <button className="rounded-xl bg-emerald-300 px-3 py-3 text-sm font-semibold text-slate-950 disabled:opacity-60" disabled={saving || permission === "unsupported"} onClick={enable} type="button">{saving ? "Guardando..." : "Activar"}</button> : <button className="rounded-xl border border-rose-900/70 px-3 py-3 text-sm font-semibold text-rose-200 disabled:opacity-60" disabled={saving} onClick={() => save({ is_enabled: false, permission: preferencePermission(permission) })} type="button">Desactivar</button>}
+      {preference.is_enabled && isGranted && <button className={secondaryButtonClass} disabled={saving} onClick={() => save({ is_enabled: true, permission: "GRANTED", reminder_time: preference.reminder_time || "09:00" })} type="button">Guardar hora</button>}
+    </div>
+    <Message error={error} />
+    <p className="mt-4 text-xs leading-5 text-slate-500">La programación funciona mientras la app esté abierta. No se promete entrega en Apple Watch: requiere validar un dispositivo y su configuración.</p>
+  </Panel>;
 }
 
 function NamedRecordsManager({ title, resource, records, sessionUser, familyId, onChanged, category = false }) {
@@ -171,10 +236,11 @@ export function Settings({ accounts, categories, familyId, families, incomeForec
     getMemberships(familyId, controller.signal).then(setMemberships).catch(() => setMemberships([]));
     return () => controller.abort();
   }, [familyId]);
-  const panels = [{ id: "profile", label: "Perfil" }, { id: "categories", label: "Categorías" }, { id: "accounts", label: "Cuentas" }, { id: "forecasts", label: "Pronósticos" }, { id: "obligations", label: "Obligaciones" }];
+  const panels = [{ id: "profile", label: "Perfil" }, { id: "notifications", label: "Avisos" }, { id: "categories", label: "Categorías" }, { id: "accounts", label: "Cuentas" }, { id: "forecasts", label: "Pronósticos" }, { id: "obligations", label: "Obligaciones" }];
   return <div className="mt-8 space-y-5">
     <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Ajustes">{panels.map((item) => <button className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${panel === item.id ? "bg-emerald-300 text-slate-950" : "bg-slate-900 text-slate-400"}`} key={item.id} onClick={() => setPanel(item.id)} role="tab" type="button">{item.label}</button>)}</div>
     {panel === "profile" && <Panel title="Perfil y familia"><dl className="mt-4 space-y-3 text-sm"><div><dt className="text-slate-500">Usuario</dt><dd className="mt-1 font-medium text-slate-100">{sessionUser.username}</dd></div>{sessionUser.email && <div><dt className="text-slate-500">Correo</dt><dd className="mt-1 font-medium text-slate-100">{sessionUser.email}</dd></div>}</dl>{families.length > 1 && <label className="mt-5 block text-sm font-medium text-slate-300">Familia activa<select className={fieldClass} onChange={(event) => onFamilyChange(event.target.value)} value={familyId}>{families.map((family) => <option key={family.id} value={family.id}>{family.name}</option>)}</select></label>}<button className="mt-6 w-full rounded-xl border border-rose-900/70 px-4 py-3 text-sm font-semibold text-rose-200" onClick={onLogout} type="button">Cerrar sesión</button></Panel>}
+    {panel === "notifications" && <NotificationPreferences familyId={familyId} />}
     {panel === "categories" && <NamedRecordsManager category familyId={familyId} onChanged={onChanged} records={categories} resource="categories" sessionUser={sessionUser} title="Categorías" />}
     {panel === "accounts" && <NamedRecordsManager familyId={familyId} onChanged={onChanged} records={accounts} resource="logical-accounts" sessionUser={sessionUser} title="Cuentas lógicas" />}
     {panel === "forecasts" && <><ForecastManager accounts={accounts} categories={categories} familyId={familyId} onChanged={onChanged} records={incomeForecasts} sessionUser={sessionUser} type="income" /><div className="h-5" /><ForecastManager accounts={accounts} categories={categories} familyId={familyId} onChanged={onChanged} records={expenseForecasts} sessionUser={sessionUser} type="expense" /></>}

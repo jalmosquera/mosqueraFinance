@@ -93,4 +93,30 @@ class FamilyMembership(models.Model):
         return f"{self.user} in {self.family}"
 
 
-# Create your models here.
+class UserNotificationPreference(models.Model):
+    class Permission(models.TextChoices):
+        DEFAULT = "DEFAULT", "Default"
+        GRANTED = "GRANTED", "Granted"
+        DENIED = "DENIED", "Denied"
+
+    family = models.ForeignKey(
+        Family, on_delete=models.CASCADE, related_name="notification_preferences"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notification_preferences",
+    )
+    is_enabled = models.BooleanField(default=False)
+    reminder_time = models.TimeField(null=True, blank=True)
+    permission = models.CharField(
+        max_length=10, choices=Permission.choices, default=Permission.DEFAULT
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("family", "user"), name="unique_family_user_notification_preference"
+            ),
+        ]

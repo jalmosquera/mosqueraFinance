@@ -8,15 +8,17 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.models import User
+from apps.audit.services import record_entity_mutation
 
 from .initial_forecast_serializers import InitialForecastConfigurationSerializer
 from .initial_forecast_services import configure_initial_forecasts
-from .models import Family, FamilyMembership
+from .models import Family, FamilyMembership, UserNotificationPreference
 from .serializers import (
     FamilyMembershipSerializer,
     FamilySerializer,
     MembershipCreateSerializer,
     MembershipUpdateSerializer,
+    UserNotificationPreferenceSerializer,
 )
 from .services import create_membership, delete_membership, update_membership
 
@@ -123,3 +125,46 @@ class InitialForecastConfigurationView(APIView):
         except DjangoValidationError as error:
             raise ValidationError(error.message_dict) from error
         return Response(result, status=status.HTTP_200_OK)
+
+
+class UserNotificationPreferenceView(APIView):
+    """A caller can only read or update their own preference in an authorized family."""
+
+    permission_classes = (IsAuthenticated,)
+
+    def get_family(self):
+        return get_object_or_404(
+            Family.objects.visible_to(self.request.user), pk=self.kwargs["family_pk"]
+        )
+
+    def get(self, request, family_pk):
+        preference = UserNotificationPreference.objects.filter(
+            family=self.get_family(), user=request.user
+        ).first()
+        if preference is None:
+            preference = UserNotificationPreference(family_id=family_pk, user=request.user)
+        return Response(UserNotificationPreferenceSerializer(preference).data)
+
+    def patch(self, request, family_pk):
+        family = self.get_family()
+        preference, _ = UserNotificationPreference.objects.get_or_create(
+            family=family, user=request.user
+        )
+        serializer = UserNotificationPreferenceSerializer(
+            preference, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        preference = serializer.save()
+        record_entity_mutation(
+            actor=request.user,
+            action="notification_preference.updated",
+            family=family,
+            entity_type="notification_preference",
+            entity_id=preference.pk,
+            metadata={
+                "is_enabled": preference.is_enabled,
+                "reminder_configured": preference.reminder_time is not None,
+                "permission": preference.permission,
+            },
+        )
+        return Response(UserNotificationPreferenceSerializer(preference).data)

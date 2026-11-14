@@ -30,6 +30,14 @@ export function getMemberships(familyId, signal) {
   return api.get(`families/${familyId}/memberships/`, { signal }).then((response) => response.data);
 }
 
+export function getNotificationPreference(familyId, signal) {
+  return api.get(`families/${familyId}/notification-preferences/`, { signal }).then((response) => response.data);
+}
+
+export function updateNotificationPreference(familyId, preference) {
+  return api.patch(`families/${familyId}/notification-preferences/`, preference).then((response) => response.data);
+}
+
 export function createFamilyRecord(familyId, resource, payload) {
   return api.post(`families/${familyId}/${resource}/`, payload).then((response) => response.data);
 }
