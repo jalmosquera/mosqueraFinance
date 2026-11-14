@@ -10,5 +10,6 @@ The repository structure and OpenCode multi-agent configuration are present. The
 
 - `docs/architecture.md`: approved technical architecture and invariants.
 - `docs/agent-workflow.md`: orchestration, agent boundaries, and integration workflow.
+- `docs/deployment.md`: Docker Compose deployment foundation, configuration, and database recovery procedures.
 - `.opencode/agents/`: local, ignored configuration for the seven specialized OpenCode subagents.
 - `.opencode/skills/`: reusable project skills.
