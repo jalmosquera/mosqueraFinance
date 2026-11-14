@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getFamilies, getFamilyData, isUnauthenticated } from "./api";
+import { bootstrapSession, getFamilies, getFamilyData, isUnauthenticated, login, logout } from "./api";
 
 export function formatMoney(amount) {
   if (typeof amount !== "string" && typeof amount !== "number") {
@@ -78,6 +78,40 @@ function firstDayOfCurrentMonth() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
+function LoginScreen({ onAuthenticated }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState("idle");
+
+  async function submit(event) {
+    event.preventDefault();
+    setStatus("submitting");
+    try {
+      onAuthenticated(await login(username, password));
+    } catch {
+      setStatus("error");
+    }
+  }
+
+  return (
+    <main className="flex min-h-dvh items-center bg-slate-950 px-5 py-8 text-slate-100">
+      <section className="mx-auto w-full max-w-md rounded-[2rem] border border-slate-800 bg-slate-900/70 p-6 shadow-2xl shadow-slate-950/40">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-400/10 text-lg font-bold text-emerald-300">MF</div>
+        <p className="mt-6 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">Mosquera Finance</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Tu espacio familiar</h1>
+        <p className="mt-3 text-sm leading-6 text-slate-400">Ingresá para consultar la información que tenés autorizada.</p>
+        <form className="mt-7 space-y-4" onSubmit={submit}>
+          <label className="block text-sm font-medium text-slate-300">Usuario<input autoComplete="username" className="mt-2 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-base text-white outline-none transition focus:border-emerald-300" onChange={(event) => setUsername(event.target.value)} required value={username} /></label>
+          <label className="block text-sm font-medium text-slate-300">Contraseña<input autoComplete="current-password" className="mt-2 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-base text-white outline-none transition focus:border-emerald-300" onChange={(event) => setPassword(event.target.value)} required type="password" value={password} /></label>
+          {status === "error" && <p className="rounded-xl border border-rose-900/60 bg-rose-950/30 px-3 py-2 text-sm text-rose-200" role="alert">No se pudo iniciar sesión. Verificá tus datos e intentá nuevamente.</p>}
+          <button className="w-full rounded-xl bg-emerald-300 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60" disabled={status === "submitting"} type="submit">{status === "submitting" ? "Ingresando..." : "Iniciar sesión"}</button>
+        </form>
+        <p className="mt-5 text-center text-xs leading-5 text-slate-500">Tu sesión se mantiene protegida en este dispositivo.</p>
+      </section>
+    </main>
+  );
+}
+
 export function App() {
   const [activeTab, setActiveTab] = useState("Resumen");
   const [activeSection, setActiveSection] = useState("Inicio");
@@ -85,6 +119,7 @@ export function App() {
   const [familyId, setFamilyId] = useState("");
   const [data, setData] = useState(null);
   const [state, setState] = useState("loading");
+  const [session, setSession] = useState({ status: "loading", user: null });
 
   function loadFamilies() {
     const controller = new AbortController();
@@ -109,10 +144,27 @@ export function App() {
     loadFamilies();
   }
 
-  useEffect(() => loadFamilies(), []);
+  useEffect(() => {
+    const controller = new AbortController();
+    bootstrapSession(controller.signal)
+      .then((user) => setSession({ status: "authenticated", user }))
+      .catch((error) => {
+        if (error.code !== "ERR_CANCELED") {
+          setSession({ status: "unauthenticated", user: null });
+        }
+      });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
-    if (!familyId) {
+    if (session.status !== "authenticated") {
+      return undefined;
+    }
+    return loadFamilies();
+  }, [session.status]);
+
+  useEffect(() => {
+    if (session.status !== "authenticated" || !familyId) {
       return undefined;
     }
 
@@ -130,10 +182,33 @@ export function App() {
         }
       });
     return () => controller.abort();
-  }, [familyId]);
+  }, [familyId, session.status]);
+
+  async function signOut() {
+    try {
+      await logout();
+    } finally {
+      setData(null);
+      setFamilies([]);
+      setFamilyId("");
+      setSession({ status: "unauthenticated", user: null });
+    }
+  }
+
+  function handleAuthenticated(user) {
+    setSession({ status: "authenticated", user });
+  }
 
   const selectedFamily = families.find((family) => String(family.id) === familyId);
   const showProjection = activeTab === "Proyección";
+
+  if (session.status === "loading") {
+    return <main className="flex min-h-dvh items-center justify-center bg-slate-950 px-5 text-sm font-medium text-slate-300">Preparando sesión segura...</main>;
+  }
+
+  if (session.status === "unauthenticated") {
+    return <LoginScreen onAuthenticated={handleAuthenticated} />;
+  }
 
   return (
     <main className="min-h-dvh bg-slate-950 text-slate-100">
@@ -143,7 +218,7 @@ export function App() {
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">Mosquera Finance</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">{selectedFamily?.name || activeSection}</h1>
           </div>
-          <div className="flex h-11 w-11 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-sm font-semibold text-slate-300" aria-label="Sesión protegida">MF</div>
+          <button className="flex h-11 min-w-11 items-center justify-center rounded-full border border-slate-800 bg-slate-900 px-2 text-sm font-semibold text-slate-300" onClick={signOut} type="button" aria-label="Cerrar sesión">{session.user.username.slice(0, 2).toUpperCase()}</button>
         </header>
 
         {families.length > 1 && <label className="mt-6 block text-sm text-slate-400">Familia<select value={familyId} onChange={(event) => setFamilyId(event.target.value)} className="mt-2 block w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-3 text-sm font-medium text-white">{families.map((family) => <option key={family.id} value={family.id}>{family.name}</option>)}</select></label>}

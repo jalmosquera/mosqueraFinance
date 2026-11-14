@@ -11,6 +11,21 @@ export function getFamilies(signal) {
   return api.get("families/", { signal }).then((response) => response.data);
 }
 
+export async function bootstrapSession(signal) {
+  await api.get("auth/csrf/", { signal });
+  const response = await api.get("auth/me/", { signal });
+  return response.data.user;
+}
+
+export async function login(username, password) {
+  const response = await api.post("auth/login/", { username, password });
+  return response.data.user;
+}
+
+export function logout() {
+  return api.post("auth/logout/");
+}
+
 export async function getFamilyData(familyId, startMonth, signal) {
   const prefix = `families/${familyId}`;
   const matiasFund = api.get(`${prefix}/matias-fund/`, { signal }).catch((error) => {
@@ -59,5 +74,5 @@ export async function getFamilyData(familyId, startMonth, signal) {
 }
 
 export function isUnauthenticated(error) {
-  return error.response?.status === 401;
+  return error.response?.status === 401 || error.response?.data?.detail === "Authentication credentials were not provided.";
 }
