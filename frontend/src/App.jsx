@@ -1,21 +1,10 @@
 import { useEffect, useState } from "react";
 import { bootstrapSession, getFamilies, getFamilyData, isUnauthenticated, login, logout } from "./api";
+import { createExportImage, downloadImage } from "./exportImage";
+import { createExportPayload } from "./exportPayload";
+import { formatMoney } from "./formatMoney";
 
-export function formatMoney(amount) {
-  if (typeof amount !== "string" && typeof amount !== "number") {
-    return null;
-  }
-
-  const value = String(amount);
-  if (!/^-?\d+(\.\d{1,2})?$/.test(value)) {
-    return null;
-  }
-
-  const negative = value.startsWith("-");
-  const [integer, decimal = ""] = (negative ? value.slice(1) : value).split(".");
-  const groupedInteger = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  return `${negative ? "-" : ""}${groupedInteger},${decimal.padEnd(2, "0")} €`;
-}
+export { formatMoney };
 
 const tabs = ["Resumen", "Detalle", "Proyección"];
 const navigation = [
@@ -109,6 +98,56 @@ function LoginScreen({ onAuthenticated }) {
         <p className="mt-5 text-center text-xs leading-5 text-slate-500">Tu sesión se mantiene protegida en este dispositivo.</p>
       </section>
     </main>
+  );
+}
+
+function ExportCards({ data, familyName, sessionUser }) {
+  const [recipient, setRecipient] = useState("Raiza");
+  const [status, setStatus] = useState("idle");
+  const [error, setError] = useState("");
+
+  async function exportCards() {
+    setStatus("loading");
+    setError("");
+    const recipients = recipient === "both" ? ["Raiza", "Jalberth"] : [recipient];
+
+    try {
+      const files = await Promise.all(recipients.map(async (name) => {
+        const payload = createExportPayload(data, sessionUser, name);
+        const blob = await createExportImage(payload, familyName);
+        return new File([blob], `resumen-${name.toLocaleLowerCase()}.png`, { type: "image/png" });
+      }));
+
+      if (navigator.share && navigator.canShare?.({ files })) {
+        await navigator.share({ files, title: "Resumen financiero" });
+        setStatus("shared");
+      } else {
+        files.forEach(downloadImage);
+        setStatus("downloaded");
+      }
+    } catch (exportError) {
+      if (exportError.name === "AbortError") {
+        setStatus("idle");
+        return;
+      }
+      setError("No se pudieron generar las tarjetas. Intentá nuevamente.");
+      setStatus("error");
+    }
+  }
+
+  return (
+    <section className="rounded-[2rem] border border-emerald-900/50 bg-emerald-950/20 p-5">
+      <h2 className="text-base font-semibold text-white">Compartir resumen privado</h2>
+      <p className="mt-2 text-sm leading-6 text-slate-400">Se crea una tarjeta PNG por destinatario. La tarjeta de Raiza solo incluye datos compartidos y sus propios datos autorizados.</p>
+      <fieldset className="mt-4 grid grid-cols-3 gap-2" disabled={status === "loading"}>
+        <legend className="sr-only">Destinatario</legend>
+        {[{ value: "Raiza", label: "Raiza" }, { value: "Jalberth", label: "Jalberth" }, { value: "both", label: "Ambos" }].map((option) => <button key={option.value} type="button" onClick={() => setRecipient(option.value)} className={`rounded-xl border px-2 py-2 text-xs font-semibold ${recipient === option.value ? "border-emerald-300 bg-emerald-300 text-slate-950" : "border-slate-700 text-slate-300"}`}>{option.label}</button>)}
+      </fieldset>
+      {error && <p className="mt-3 text-sm text-rose-200" role="alert">{error}</p>}
+      {status === "shared" && <p className="mt-3 text-sm text-emerald-200" role="status">Tarjeta compartida.</p>}
+      {status === "downloaded" && <p className="mt-3 text-sm text-emerald-200" role="status">La descarga empezó porque compartir archivos no está disponible.</p>}
+      <button type="button" onClick={exportCards} disabled={status === "loading"} className="mt-4 w-full rounded-xl bg-emerald-300 px-4 py-3 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">{status === "loading" ? "Generando tarjetas..." : "Generar y compartir PNG"}</button>
+    </section>
   );
 }
 
@@ -245,6 +284,7 @@ export function App() {
           {state === "empty" && <EmptyState>No tenés una familia autorizada para consultar.</EmptyState>}
           {state === "ready" && data && <div className="space-y-5">
             {showProjection ? <Records title="Proyección" items={data.projection.months}>{data.projection.months.map((month) => <MoneyRecord key={month.month} record={{ description: month.month }} subtitle={`Ingresos ${formatMoney(month.income)} · Gastos ${formatMoney(month.expenses)} · Ahorro ${formatMoney(month.savings_contribution)}`} amount={month.net_after_savings} />)}</Records> : <>
+              <ExportCards data={data} familyName={selectedFamily?.name || "Familia"} sessionUser={session.user} />
               <Records title="Cuentas" items={data.accounts}>{data.accounts.map((account) => <MoneyRecord key={account.id} record={{ description: account.name }} />)}</Records>
               <Records title="Categorías" items={data.categories}>{data.categories.map((category) => <MoneyRecord key={category.id} record={{ description: category.name }} subtitle={category.kind} />)}</Records>
               <Records title="Ingresos configurados" items={data.incomeForecasts}>{data.incomeForecasts.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.recurrence} />)}</Records>
