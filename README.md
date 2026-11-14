@@ -4,7 +4,7 @@ Private family-finance application for the Mosquera Alves family.
 
 ## Status
 
-The project is in the approved setup stage. The repository structure and OpenCode multi-agent configuration are present, but no backend or frontend functionality has been implemented.
+The repository structure and OpenCode multi-agent configuration are present. The first backend increment implements users, family memberships, authorization boundaries, and audit logs. Financial domain and frontend functionality have not started.
 
 ## Documentation
 

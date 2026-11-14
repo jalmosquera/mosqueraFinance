@@ -1,5 +1,9 @@
 # Approved Architecture
 
+## Implementation Status
+
+The first backend increment provides the custom user model, family memberships, authenticated family endpoints, server-enforced family scoping, and immutable audit logs. Financial records, budgets, savings, projections, frontend, and deployment infrastructure remain pending.
+
 ## System
 
 Mosquera Finance is a modular Django monolith backed by PostgreSQL. A React/Vite PWA communicates with Django REST Framework through a same-origin, versioned REST API. A reverse proxy terminates HTTPS in deployment. PostgreSQL is private to the Docker network.
