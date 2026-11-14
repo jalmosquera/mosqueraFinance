@@ -14,6 +14,9 @@ backend/dev.sqlite3
 node_modules/
 dist/
 coverage/
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
 *.log
 postgres-data/
 backups/

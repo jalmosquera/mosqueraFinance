@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "node --check vite.config.js && node --check src/api.js && node --check src/exportPayload.js && node --check src/financeValidation.js && node --check src/privacy.js",
-    "test": "vitest"
+    "test": "vitest",
+    "e2e": "playwright test",
+    "e2e:screenshots": "CAPTURE_SCREENSHOTS=1 playwright test --grep @screenshot"
   },
   "dependencies": {
     "axios": "^1.21.1",
@@ -16,6 +18,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@tailwindcss/vite": "^4.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "tailwindcss": "^4.0.0",
