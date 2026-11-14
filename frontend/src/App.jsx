@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { bootstrapSession, getFamilies, getFamilyData, isUnauthenticated, login, logout } from "./api";
+import { bootstrapSession, getFamilies, getFamilyData, isForbidden, isUnauthenticated, login, logout } from "./api";
 import { createExportImage, downloadImage } from "./exportImage";
 import { createExportPayload } from "./exportPayload";
 import { formatMoney } from "./formatMoney";
+import { Settings } from "./Settings";
 
 export { formatMoney };
 
@@ -157,8 +158,10 @@ export function App() {
   const [families, setFamilies] = useState([]);
   const [familyId, setFamilyId] = useState("");
   const [data, setData] = useState(null);
+  const [loadedFamilyId, setLoadedFamilyId] = useState("");
   const [state, setState] = useState("loading");
   const [session, setSession] = useState({ status: "loading", user: null });
+  const [reloadKey, setReloadKey] = useState(0);
 
   function loadFamilies() {
     const controller = new AbortController();
@@ -171,7 +174,7 @@ export function App() {
       })
       .catch((error) => {
         if (error.code !== "ERR_CANCELED") {
-          setState(isUnauthenticated(error) ? "unauthenticated" : "error");
+          setState(isUnauthenticated(error) ? "unauthenticated" : isForbidden(error) ? "forbidden" : "error");
         }
       });
     return () => controller.abort();
@@ -179,8 +182,13 @@ export function App() {
 
   function retry() {
     setData(null);
+    setLoadedFamilyId("");
     setFamilyId("");
     loadFamilies();
+  }
+
+  function reloadFamilyData() {
+    setReloadKey((current) => current + 1);
   }
 
   useEffect(() => {
@@ -209,25 +217,28 @@ export function App() {
 
     const controller = new AbortController();
     setData(null);
+    setLoadedFamilyId("");
     setState("loading");
     getFamilyData(familyId, firstDayOfCurrentMonth(), controller.signal)
       .then((response) => {
         setData(response);
+        setLoadedFamilyId(familyId);
         setState("ready");
       })
       .catch((error) => {
         if (error.code !== "ERR_CANCELED") {
-          setState(isUnauthenticated(error) ? "unauthenticated" : "error");
+          setState(isUnauthenticated(error) ? "unauthenticated" : isForbidden(error) ? "forbidden" : "error");
         }
       });
     return () => controller.abort();
-  }, [familyId, session.status]);
+  }, [familyId, reloadKey, session.status]);
 
   async function signOut() {
     try {
       await logout();
     } finally {
       setData(null);
+      setLoadedFamilyId("");
       setFamilies([]);
       setFamilyId("");
       setSession({ status: "unauthenticated", user: null });
@@ -240,6 +251,7 @@ export function App() {
 
   const selectedFamily = families.find((family) => String(family.id) === familyId);
   const showProjection = activeTab === "Proyección";
+  const visibleData = loadedFamilyId === familyId ? data : null;
 
   if (session.status === "loading") {
     return <main className="flex min-h-dvh items-center justify-center bg-slate-950 px-5 text-sm font-medium text-slate-300">Preparando sesión segura...</main>;
@@ -260,9 +272,9 @@ export function App() {
           <button className="flex h-11 min-w-11 items-center justify-center rounded-full border border-slate-800 bg-slate-900 px-2 text-sm font-semibold text-slate-300" onClick={signOut} type="button" aria-label="Cerrar sesión">{session.user.username.slice(0, 2).toUpperCase()}</button>
         </header>
 
-        {families.length > 1 && <label className="mt-6 block text-sm text-slate-400">Familia<select value={familyId} onChange={(event) => setFamilyId(event.target.value)} className="mt-2 block w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-3 text-sm font-medium text-white">{families.map((family) => <option key={family.id} value={family.id}>{family.name}</option>)}</select></label>}
+        {families.length > 1 && activeSection !== "Ajustes" && <label className="mt-6 block text-sm text-slate-400">Familia<select value={familyId} onChange={(event) => setFamilyId(event.target.value)} className="mt-2 block w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-3 text-sm font-medium text-white">{families.map((family) => <option key={family.id} value={family.id}>{family.name}</option>)}</select></label>}
 
-        <div className="mt-8 flex rounded-2xl bg-slate-900 p-1" role="tablist" aria-label="Vista financiera">
+        {activeSection !== "Ajustes" && <div className="mt-8 flex rounded-2xl bg-slate-900 p-1" role="tablist" aria-label="Vista financiera">
           {tabs.map((tab) => (
             <button
               key={tab}
@@ -275,25 +287,27 @@ export function App() {
               {tab}
             </button>
           ))}
-        </div>
+        </div>}
 
         <div className="mt-6">
-          {state === "loading" && <section className="rounded-[2rem] border border-slate-900 bg-slate-900/40 p-5" aria-label="Cargando datos"><p className="text-sm font-medium text-slate-300">Cargando información protegida</p><div className="mt-4 space-y-3" aria-hidden="true"><div className="h-3 w-2/5 animate-pulse rounded-full bg-slate-800" /><div className="h-3 w-full animate-pulse rounded-full bg-slate-800" /></div></section>}
-          {state === "unauthenticated" && <EmptyState>Tu sesión no está disponible. Iniciá sesión para consultar la información autorizada.</EmptyState>}
-          {state === "error" && <section className="rounded-[2rem] border border-rose-900/60 bg-rose-950/30 p-6"><h2 className="text-lg font-semibold text-white">No se pudo cargar la información</h2><p className="mt-2 text-sm leading-6 text-slate-400">Verificá la conexión e intentá nuevamente.</p><button type="button" onClick={retry} className="mt-5 rounded-xl bg-rose-300 px-4 py-2 text-sm font-semibold text-slate-950">Reintentar</button></section>}
-          {state === "empty" && <EmptyState>No tenés una familia autorizada para consultar.</EmptyState>}
-          {state === "ready" && data && <div className="space-y-5">
-            {showProjection ? <Records title="Proyección" items={data.projection.months}>{data.projection.months.map((month) => <MoneyRecord key={month.month} record={{ description: month.month }} subtitle={`Ingresos ${formatMoney(month.income)} · Gastos ${formatMoney(month.expenses)} · Ahorro ${formatMoney(month.savings_contribution)}`} amount={month.net_after_savings} />)}</Records> : <>
-              <ExportCards data={data} familyName={selectedFamily?.name || "Familia"} sessionUser={session.user} />
-              <Records title="Cuentas" items={data.accounts}>{data.accounts.map((account) => <MoneyRecord key={account.id} record={{ description: account.name }} />)}</Records>
-              <Records title="Categorías" items={data.categories}>{data.categories.map((category) => <MoneyRecord key={category.id} record={{ description: category.name }} subtitle={category.kind} />)}</Records>
-              <Records title="Ingresos configurados" items={data.incomeForecasts}>{data.incomeForecasts.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.recurrence} />)}</Records>
-              <Records title="Ingresos confirmados" items={data.incomeMovements}>{data.incomeMovements.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.occurred_on} />)}</Records>
-              <Records title="Gastos configurados" items={data.expenseForecasts}>{data.expenseForecasts.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.recurrence} />)}</Records>
-              <Records title="Gastos confirmados" items={data.expenseMovements}>{data.expenseMovements.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.occurred_on} />)}</Records>
-              <Records title="Objetivos de ahorro" items={data.savingsGoals}>{data.savingsGoals.map((goal) => <MoneyRecord key={goal.id} record={{ description: goal.name }} subtitle={`Saldo real ${formatMoney(goal.real_balance)} · Objetivo ${formatMoney(goal.target_amount)}`} amount={goal.projected_balance} />)}</Records>
-              <Records title="Movimientos de ahorro" items={data.savingsMovements}>{data.savingsMovements.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.occurred_on} />)}</Records>
-              {data.matiasFund && <Records title="Fondo Matías" items={[data.matiasFund]}><MoneyRecord record={{ description: "Saldo real" }} subtitle={`Objetivo ${formatMoney(data.matiasFund.target_amount)}`} amount={data.matiasFund.real_balance} /></Records>}
+          {activeSection === "Ajustes" && familyId && <Settings accounts={visibleData?.accounts || []} categories={visibleData?.categories || []} expenseForecasts={visibleData?.expenseForecasts || []} families={families} familyId={familyId} incomeForecasts={visibleData?.incomeForecasts || []} onChanged={reloadFamilyData} onFamilyChange={setFamilyId} onLogout={signOut} sessionUser={session.user} />}
+          {activeSection !== "Ajustes" && state === "loading" && <section className="rounded-[2rem] border border-slate-900 bg-slate-900/40 p-5" aria-label="Cargando datos"><p className="text-sm font-medium text-slate-300">Cargando información protegida</p><div className="mt-4 space-y-3" aria-hidden="true"><div className="h-3 w-2/5 animate-pulse rounded-full bg-slate-800" /><div className="h-3 w-full animate-pulse rounded-full bg-slate-800" /></div></section>}
+          {activeSection !== "Ajustes" && state === "unauthenticated" && <EmptyState>Tu sesión no está disponible. Iniciá sesión para consultar la información autorizada.</EmptyState>}
+          {activeSection !== "Ajustes" && state === "forbidden" && <section className="rounded-[2rem] border border-amber-900/60 bg-amber-950/20 p-6"><h2 className="text-lg font-semibold text-white">No tenés acceso a esta información</h2><p className="mt-2 text-sm leading-6 text-slate-400">Por privacidad, no mostramos detalles de datos que no están autorizados para tu perfil.</p><button type="button" onClick={retry} className="mt-5 rounded-xl bg-amber-300 px-4 py-2 text-sm font-semibold text-slate-950">Reintentar</button></section>}
+          {activeSection !== "Ajustes" && state === "error" && <section className="rounded-[2rem] border border-rose-900/60 bg-rose-950/30 p-6"><h2 className="text-lg font-semibold text-white">No se pudo cargar la información</h2><p className="mt-2 text-sm leading-6 text-slate-400">Verificá la conexión e intentá nuevamente.</p><button type="button" onClick={retry} className="mt-5 rounded-xl bg-rose-300 px-4 py-2 text-sm font-semibold text-slate-950">Reintentar</button></section>}
+          {activeSection !== "Ajustes" && state === "empty" && <EmptyState>No tenés una familia autorizada para consultar.</EmptyState>}
+          {activeSection !== "Ajustes" && state === "ready" && visibleData && <div className="space-y-5">
+            {showProjection ? <Records title="Proyección" items={visibleData.projection.months}>{visibleData.projection.months.map((month) => <MoneyRecord key={month.month} record={{ description: month.month }} subtitle={`Ingresos ${formatMoney(month.income)} · Gastos ${formatMoney(month.expenses)} · Ahorro ${formatMoney(month.savings_contribution)}`} amount={month.net_after_savings} />)}</Records> : <>
+              <ExportCards data={visibleData} familyName={selectedFamily?.name || "Familia"} sessionUser={session.user} />
+              <Records title="Cuentas" items={visibleData.accounts}>{visibleData.accounts.map((account) => <MoneyRecord key={account.id} record={{ description: account.name }} />)}</Records>
+              <Records title="Categorías" items={visibleData.categories}>{visibleData.categories.map((category) => <MoneyRecord key={category.id} record={{ description: category.name }} subtitle={category.kind} />)}</Records>
+              <Records title="Ingresos configurados" items={visibleData.incomeForecasts}>{visibleData.incomeForecasts.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.recurrence} />)}</Records>
+              <Records title="Ingresos confirmados" items={visibleData.incomeMovements}>{visibleData.incomeMovements.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.occurred_on} />)}</Records>
+              <Records title="Gastos configurados" items={visibleData.expenseForecasts}>{visibleData.expenseForecasts.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.recurrence} />)}</Records>
+              <Records title="Gastos confirmados" items={visibleData.expenseMovements}>{visibleData.expenseMovements.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.occurred_on} />)}</Records>
+              <Records title="Objetivos de ahorro" items={visibleData.savingsGoals}>{visibleData.savingsGoals.map((goal) => <MoneyRecord key={goal.id} record={{ description: goal.name }} subtitle={`Saldo real ${formatMoney(goal.real_balance)} · Objetivo ${formatMoney(goal.target_amount)}`} amount={goal.projected_balance} />)}</Records>
+              <Records title="Movimientos de ahorro" items={visibleData.savingsMovements}>{visibleData.savingsMovements.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.occurred_on} />)}</Records>
+              {visibleData.matiasFund && <Records title="Fondo Matías" items={[visibleData.matiasFund]}><MoneyRecord record={{ description: "Saldo real" }} subtitle={`Objetivo ${formatMoney(visibleData.matiasFund.target_amount)}`} amount={visibleData.matiasFund.real_balance} /></Records>}
             </>}
           </div>}
         </div>
