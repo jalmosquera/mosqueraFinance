@@ -76,6 +76,12 @@ def _upsert_forecasts(*, model, family, values, accounts, categories, member_ids
                 record = model.objects.get(pk=record_id, family=family)
             except model.DoesNotExist as error:
                 raise ValidationError({"id": "Forecast does not belong to this family."}) from error
+            # Snapshot the existing definition before the administrative flow changes it.
+            from apps.obligations.services import (
+                preserve_historical_occurrences_before_forecast_edit,
+            )
+
+            preserve_historical_occurrences_before_forecast_edit(forecast=record)
             for field, value in data.items():
                 setattr(record, field, value)
             record.account = account

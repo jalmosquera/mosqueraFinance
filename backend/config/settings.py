@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "apps.budgets",
     "apps.incomes",
     "apps.expenses",
+    "apps.obligations",
     "apps.savings",
     "apps.projections",
 ]

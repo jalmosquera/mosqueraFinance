@@ -9,6 +9,9 @@ from rest_framework.response import Response
 
 from apps.audit.services import record_entity_mutation
 from apps.families.models import Family
+from apps.obligations.services import (
+    preserve_historical_occurrences_before_forecast_edit,
+)
 
 from .models import IncomeForecast, IncomeMovement
 from .serializers import (
@@ -50,6 +53,10 @@ class FamilyScopedIncomeViewSet(viewsets.ModelViewSet):
 
     @transaction.atomic
     def perform_update(self, serializer):
+        if isinstance(serializer.instance, IncomeForecast):
+            preserve_historical_occurrences_before_forecast_edit(
+                forecast=serializer.instance
+            )
         record = serializer.save()
         record_entity_mutation(
             actor=self.request.user,
