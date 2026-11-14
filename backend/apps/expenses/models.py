@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -56,8 +58,11 @@ class ExpenseRecord(models.Model):
 
 
 class ConfirmedMovementQuerySet(FamilyScopedQuerySet):
+    def update(self, **kwargs):
+        raise ValidationError("Confirmed movements are immutable; create a correction instead.")
+
     def delete(self):
-        raise ValidationError("Confirmed movements cannot be deleted; void them instead.")
+        raise ValidationError("Confirmed movements cannot be deleted; create a correction instead.")
 
 
 class ConfirmedMovementManager(
@@ -89,6 +94,10 @@ class ExpenseForecast(ExpenseRecord):
         super().clean()
         if self.is_cigarettes and self.owner_id is not None:
             raise ValidationError({"owner": "The cigarettes forecast must be shared."})
+        if self.is_cigarettes and self.amount != Decimal("186.00"):
+            raise ValidationError({"amount": "The cigarettes forecast must be exactly 186.00 EUR."})
+        if self.is_cigarettes and self.recurrence != Recurrence.MONTHLY:
+            raise ValidationError({"recurrence": "The cigarettes forecast must recur monthly."})
 
 
 class ExpenseForecastAllocation(models.Model):
@@ -115,6 +124,8 @@ class ExpenseForecastAllocation(models.Model):
         errors = {}
         if self.forecast_id and not self.forecast.is_cigarettes:
             errors["forecast"] = "Only the cigarettes forecast can have planned allocations."
+        if self.forecast_id and self.forecast.is_cigarettes and self.amount != Decimal("93.00"):
+            errors["amount"] = "Each cigarettes allocation must be exactly 93.00 EUR."
         if self.forecast_id and not self.forecast.family.memberships.filter(
             user_id=self.member_id, is_active=True
         ).exists():
@@ -133,11 +144,38 @@ class ExpenseMovement(ExpenseRecord):
     )
     void_reason = models.TextField(blank=True)
     voided_at = models.DateTimeField(null=True, blank=True)
+    is_reversal = models.BooleanField(default=False)
+    reversal_of = models.OneToOneField(
+        "self", null=True, blank=True, on_delete=models.PROTECT, related_name="reversal"
+    )
+    replaces = models.OneToOneField(
+        "self", null=True, blank=True, on_delete=models.PROTECT, related_name="replacement"
+    )
+    correction_reason = models.TextField(blank=True)
 
     objects = ConfirmedMovementManager()
 
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.is_reversal != bool(self.reversal_of_id):
+            errors["reversal_of"] = "Only reversal movements can reference an original movement."
+        if self.reversal_of_id and self.reversal_of_id == self.pk:
+            errors["reversal_of"] = "A movement cannot reverse itself."
+        if self.replaces_id and self.replaces_id == self.pk:
+            errors["replaces"] = "A movement cannot replace itself."
+        if (self.reversal_of_id or self.replaces_id) and not self.correction_reason.strip():
+            errors["correction_reason"] = "Corrections require a reason."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Confirmed movements are immutable; create a correction instead.")
+        return super().save(*args, **kwargs)
+
     def delete(self, *args, **kwargs):
-        raise ValidationError("Confirmed movements cannot be deleted; void them instead.")
+        raise ValidationError("Confirmed movements cannot be deleted; create a correction instead.")
 
 
 class ExpenseAllocation(models.Model):

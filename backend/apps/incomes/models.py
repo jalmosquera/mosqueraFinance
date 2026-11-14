@@ -21,8 +21,11 @@ class Recurrence(models.TextChoices):
 
 
 class ConfirmedMovementQuerySet(FamilyScopedQuerySet):
+    def update(self, **kwargs):
+        raise ValidationError("Confirmed movements are immutable; create a correction instead.")
+
     def delete(self):
-        raise ValidationError("Confirmed movements cannot be deleted; void them instead.")
+        raise ValidationError("Confirmed movements cannot be deleted; create a correction instead.")
 
 
 class ConfirmedMovementManager(
@@ -95,8 +98,35 @@ class IncomeMovement(IncomeRecord):
     )
     void_reason = models.TextField(blank=True)
     voided_at = models.DateTimeField(null=True, blank=True)
+    is_reversal = models.BooleanField(default=False)
+    reversal_of = models.OneToOneField(
+        "self", null=True, blank=True, on_delete=models.PROTECT, related_name="reversal"
+    )
+    replaces = models.OneToOneField(
+        "self", null=True, blank=True, on_delete=models.PROTECT, related_name="replacement"
+    )
+    correction_reason = models.TextField(blank=True)
 
     objects = ConfirmedMovementManager()
 
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.is_reversal != bool(self.reversal_of_id):
+            errors["reversal_of"] = "Only reversal movements can reference an original movement."
+        if self.reversal_of_id and self.reversal_of_id == self.pk:
+            errors["reversal_of"] = "A movement cannot reverse itself."
+        if self.replaces_id and self.replaces_id == self.pk:
+            errors["replaces"] = "A movement cannot replace itself."
+        if (self.reversal_of_id or self.replaces_id) and not self.correction_reason.strip():
+            errors["correction_reason"] = "Corrections require a reason."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Confirmed movements are immutable; create a correction instead.")
+        return super().save(*args, **kwargs)
+
     def delete(self, *args, **kwargs):
-        raise ValidationError("Confirmed movements cannot be deleted; void them instead.")
+        raise ValidationError("Confirmed movements cannot be deleted; create a correction instead.")

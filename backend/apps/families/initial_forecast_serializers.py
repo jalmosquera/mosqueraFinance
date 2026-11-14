@@ -53,12 +53,14 @@ class ExpenseForecastInputSerializer(ForecastInputSerializer):
         if attrs["is_cigarettes"]:
             if attrs.get("owner_id") is not None:
                 raise serializers.ValidationError({"owner_id": "The cigarettes forecast must be shared."})
+            if attrs["amount"] != Decimal("186.00"):
+                raise serializers.ValidationError({"amount": "The cigarettes forecast must be exactly 186.00 EUR."})
             if attrs["recurrence"] != Recurrence.MONTHLY:
                 raise serializers.ValidationError({"recurrence": "The cigarettes forecast must recur monthly."})
-            if not allocations:
-                raise serializers.ValidationError({"allocations": "Cigarettes requires shared allocations."})
-            if sum((item["amount"] for item in allocations), Decimal("0.00")) != attrs["amount"]:
-                raise serializers.ValidationError({"allocations": "Allocation amounts must equal the forecast amount exactly."})
+            if len(allocations) != 2 or any(item["amount"] != Decimal("93.00") for item in allocations):
+                raise serializers.ValidationError({"allocations": "Cigarettes requires exactly two 93.00 EUR allocations."})
+            if len({item["member_id"] for item in allocations}) != 2:
+                raise serializers.ValidationError({"allocations": "Cigarettes allocations must belong to two different members."})
         elif allocations:
             raise serializers.ValidationError({"allocations": "Only cigarettes can have planned allocations."})
         return attrs
@@ -114,6 +116,7 @@ class InitialForecastConfigurationSerializer(serializers.Serializer):
     free_money_allowances = FreeMoneyInputSerializer(many=True, required=False, default=list)
     savings_distribution = DistributionInputSerializer(required=False)
     matias_fund = MatiasFundInputSerializer(required=False)
+    privacy_impact_confirmed = serializers.BooleanField(required=False, default=False)
 
     def validate(self, attrs):
         for field in ("accounts", "categories"):
@@ -121,6 +124,13 @@ class InitialForecastConfigurationSerializer(serializers.Serializer):
             if len(keys) != len(set(keys)):
                 raise serializers.ValidationError({field: "Keys must be unique within the request."})
         cigarette_count = sum(item["is_cigarettes"] for item in attrs["expense_forecasts"])
-        if cigarette_count > 1:
-            raise serializers.ValidationError({"expense_forecasts": "Only one shared cigarettes forecast is allowed."})
+        if cigarette_count != 1:
+            raise serializers.ValidationError({"expense_forecasts": "Configure exactly one shared cigarettes forecast."})
+        if "budget" in attrs:
+            cigarette_lines = [
+                line for line in attrs["budget"]["lines"]
+                if line["name"].strip().casefold() == "cigarettes"
+            ]
+            if len(cigarette_lines) != 1 or cigarette_lines[0]["amount"] != Decimal("186.00"):
+                raise serializers.ValidationError({"budget": "Budget configuration must include Cigarettes exactly once at 186.00 EUR."})
         return attrs

@@ -15,11 +15,11 @@ from apps.obligations.services import (
 
 from .models import ExpenseForecast, ExpenseMovement
 from .serializers import (
+    CorrectExpenseMovementSerializer,
     ExpenseForecastSerializer,
     ExpenseMovementSerializer,
-    VoidMovementSerializer,
 )
-from .services import create_expense_movement, void_expense_movement
+from .services import correct_expense_movement, create_expense_movement
 
 
 class FamilyScopedExpenseViewSet(viewsets.ModelViewSet):
@@ -102,14 +102,29 @@ class ExpenseMovementViewSet(FamilyScopedExpenseViewSet):
         )
 
     @action(detail=True, methods=["post"])
-    def void(self, request, *args, **kwargs):
+    def correct(self, request, *args, **kwargs):
         movement = self.get_object()
-        serializer = VoidMovementSerializer(data=request.data)
+        serializer = CorrectExpenseMovementSerializer(
+            data=request.data, context=self.get_serializer_context()
+        )
         serializer.is_valid(raise_exception=True)
         try:
-            movement = void_expense_movement(
-                actor=request.user, movement=movement, reason=serializer.validated_data["reason"]
+            replacement_data = serializer.validated_data.copy()
+            reason = replacement_data.pop("reason")
+            allocations = replacement_data.pop("allocations", [])
+            reversal, replacement = correct_expense_movement(
+                actor=request.user,
+                movement=movement,
+                reason=reason,
+                movement_data=replacement_data,
+                allocations=allocations,
             )
         except DjangoValidationError as error:
             raise ValidationError(error.messages) from error
-        return Response(self.get_serializer(movement).data, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "reversal": self.get_serializer(reversal).data,
+                "replacement": self.get_serializer(replacement).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )

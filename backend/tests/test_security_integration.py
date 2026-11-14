@@ -177,7 +177,7 @@ def test_raiza_cannot_access_private_obligations_or_financial_projections(
     assert projected_savings_response.status_code == status.HTTP_403_FORBIDDEN
 
 
-def test_voided_confirmed_expense_retains_allocations_and_audit_record(
+def test_corrected_confirmed_expense_retains_reversal_allocations_and_audit_record(
     api_client, private_finance_records
 ):
     data = private_finance_records
@@ -194,20 +194,32 @@ def test_voided_confirmed_expense_retains_allocations_and_audit_record(
     api_client.force_authenticate(data["raiza"])
 
     response = api_client.post(
-        f"/api/v1/families/{data['family'].pk}/expense-movements/{movement.pk}/void/",
-        {"reason": "Duplicate"},
+        f"/api/v1/families/{data['family'].pk}/expense-movements/{movement.pk}/correct/",
+        {
+            "reason": "Duplicate",
+            "account_id": data["account"].pk,
+            "category_id": data["expense_category"].pk,
+            "amount": "186.00",
+            "occurred_on": "2026-01-01",
+            "allocations": [{"member_id": data["raiza"].pk, "amount": "186.00"}],
+        },
         format="json",
     )
-    movement.refresh_from_db()
+    reversal = ExpenseMovement.objects.get(pk=response.data["reversal"]["id"])
 
-    assert response.status_code == status.HTTP_200_OK
-    assert movement.status == "VOIDED"
+    assert response.status_code == status.HTTP_201_CREATED
+    assert reversal.reversal_of_id == movement.pk
     assert ExpenseAllocation.objects.get(pk=allocation.pk).movement_id == movement.pk
+    assert reversal.allocations.get(member=data["raiza"]).amount == Decimal("186.00")
     assert AuditLog.objects.filter(
         actor=data["raiza"],
-        action="expense_movement.voided",
+        action="expense_movement.corrected",
         entity_id=movement.pk,
-        metadata={"reason": "Duplicate"},
+        metadata={
+            "reason": "Duplicate",
+            "reversal_id": reversal.pk,
+            "replacement_id": response.data["replacement"]["id"],
+        },
     ).exists()
 
 

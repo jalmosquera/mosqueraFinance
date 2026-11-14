@@ -23,7 +23,7 @@ def _require_member(owner_id, member_ids):
         raise ValidationError({"owner_id": "Owner must be an active family member."})
 
 
-def _upsert_named(*, model, family, values, member_ids):
+def _upsert_named(*, model, family, values, member_ids, privacy_impact_confirmed, privacy_transitions):
     records = {}
     for data in values:
         key = data.pop("key", None)
@@ -35,6 +35,10 @@ def _upsert_named(*, model, family, values, member_ids):
                 record = model.objects.get(pk=record_id, family=family)
             except model.DoesNotExist as error:
                 raise ValidationError({"id": "Record does not belong to this family."}) from error
+            if record.owner_id is not None and data.get("owner_id", record.owner_id) is None:
+                if not privacy_impact_confirmed:
+                    raise ValidationError({"privacy_impact_confirmed": "Private-to-shared changes require explicit confirmation."})
+                privacy_transitions.append({"entity_type": model._meta.model_name, "entity_id": record.pk})
             for field, value in data.items():
                 setattr(record, field, value)
             record.save()
@@ -57,7 +61,10 @@ def _resolve_reference(*, model, family, value, key, created):
         raise ValidationError({"key": "Reference key is not configured in this request."}) from error
 
 
-def _upsert_forecasts(*, model, family, values, accounts, categories, member_ids):
+def _upsert_forecasts(
+    *, model, family, values, accounts, categories, member_ids, privacy_impact_confirmed,
+    privacy_transitions,
+):
     records = []
     for data in values:
         allocations = data.pop("allocations", None)
@@ -76,6 +83,10 @@ def _upsert_forecasts(*, model, family, values, accounts, categories, member_ids
                 record = model.objects.get(pk=record_id, family=family)
             except model.DoesNotExist as error:
                 raise ValidationError({"id": "Forecast does not belong to this family."}) from error
+            if record.owner_id is not None and data.get("owner_id", record.owner_id) is None:
+                if not privacy_impact_confirmed:
+                    raise ValidationError({"privacy_impact_confirmed": "Private-to-shared changes require explicit confirmation."})
+                privacy_transitions.append({"entity_type": model._meta.model_name, "entity_id": record.pk})
             # Snapshot the existing definition before the administrative flow changes it.
             from apps.obligations.services import (
                 preserve_historical_occurrences_before_forecast_edit,
@@ -133,19 +144,25 @@ def _upsert_budget(*, family, data):
 @transaction.atomic
 def configure_initial_forecasts(*, actor, family, data):
     member_ids = _member_ids(family)
+    privacy_impact_confirmed = data.pop("privacy_impact_confirmed", False)
+    privacy_transitions = []
     accounts = _upsert_named(
-        model=LogicalAccount, family=family, values=data["accounts"], member_ids=member_ids
+        model=LogicalAccount, family=family, values=data["accounts"], member_ids=member_ids,
+        privacy_impact_confirmed=privacy_impact_confirmed, privacy_transitions=privacy_transitions,
     )
     categories = _upsert_named(
-        model=Category, family=family, values=data["categories"], member_ids=member_ids
+        model=Category, family=family, values=data["categories"], member_ids=member_ids,
+        privacy_impact_confirmed=privacy_impact_confirmed, privacy_transitions=privacy_transitions,
     )
     incomes = _upsert_forecasts(
         model=IncomeForecast, family=family, values=data["income_forecasts"], accounts=accounts,
         categories=categories, member_ids=member_ids,
+        privacy_impact_confirmed=privacy_impact_confirmed, privacy_transitions=privacy_transitions,
     )
     expenses = _upsert_forecasts(
         model=ExpenseForecast, family=family, values=data["expense_forecasts"], accounts=accounts,
         categories=categories, member_ids=member_ids,
+        privacy_impact_confirmed=privacy_impact_confirmed, privacy_transitions=privacy_transitions,
     )
     budget = _upsert_budget(family=family, data=data.get("budget"))
     allowances = []
@@ -194,6 +211,8 @@ def configure_initial_forecasts(*, actor, family, data):
             "expense_forecasts": len(expenses), "budget_id": budget.pk if budget else None,
             "allowances": len(allowances), "distribution_id": distribution.pk if distribution else None,
             "matias_fund_id": fund.pk if fund else None,
+            "privacy_impact_confirmed": privacy_impact_confirmed,
+            "private_to_shared_transitions": privacy_transitions,
         },
     )
     return {

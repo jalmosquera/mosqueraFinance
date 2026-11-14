@@ -71,9 +71,16 @@ class IncomeForecastSerializer(IncomeRecordSerializer):
 class IncomeMovementSerializer(IncomeRecordSerializer):
     class Meta(IncomeRecordSerializer.Meta):
         model = IncomeMovement
-        fields = IncomeRecordSerializer.Meta.fields + ("void_reason", "voided_at")
-        read_only_fields = IncomeRecordSerializer.Meta.read_only_fields + ("void_reason", "voided_at")
+        fields = IncomeRecordSerializer.Meta.fields + (
+            "void_reason", "voided_at", "is_reversal", "reversal_of", "replaces", "correction_reason",
+        )
+        read_only_fields = IncomeRecordSerializer.Meta.read_only_fields + (
+            "void_reason", "voided_at", "is_reversal", "reversal_of", "replaces", "correction_reason",
+        )
 
 
-class VoidMovementSerializer(serializers.Serializer):
+class CorrectIncomeMovementSerializer(IncomeMovementSerializer):
     reason = serializers.CharField(trim_whitespace=True, min_length=1, max_length=1000)
+
+    class Meta(IncomeMovementSerializer.Meta):
+        fields = IncomeMovementSerializer.Meta.fields + ("reason",)

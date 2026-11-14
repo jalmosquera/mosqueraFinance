@@ -15,11 +15,11 @@ from apps.obligations.services import (
 
 from .models import IncomeForecast, IncomeMovement
 from .serializers import (
+    CorrectIncomeMovementSerializer,
     IncomeForecastSerializer,
     IncomeMovementSerializer,
-    VoidMovementSerializer,
 )
-from .services import void_income_movement
+from .services import correct_income_movement
 
 
 class FamilyScopedIncomeViewSet(viewsets.ModelViewSet):
@@ -93,14 +93,27 @@ class IncomeMovementViewSet(FamilyScopedIncomeViewSet):
     http_method_names = ("get", "post", "head", "options")
 
     @action(detail=True, methods=["post"])
-    def void(self, request, *args, **kwargs):
+    def correct(self, request, *args, **kwargs):
         movement = self.get_object()
-        serializer = VoidMovementSerializer(data=request.data)
+        serializer = CorrectIncomeMovementSerializer(
+            data=request.data, context=self.get_serializer_context()
+        )
         serializer.is_valid(raise_exception=True)
         try:
-            movement = void_income_movement(
-                actor=request.user, movement=movement, reason=serializer.validated_data["reason"]
+            replacement_data = serializer.validated_data.copy()
+            reason = replacement_data.pop("reason")
+            reversal, replacement = correct_income_movement(
+                actor=request.user,
+                movement=movement,
+                reason=reason,
+                movement_data=replacement_data,
             )
         except DjangoValidationError as error:
             raise ValidationError(error.messages) from error
-        return Response(self.get_serializer(movement).data, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "reversal": self.get_serializer(reversal).data,
+                "replacement": self.get_serializer(replacement).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )

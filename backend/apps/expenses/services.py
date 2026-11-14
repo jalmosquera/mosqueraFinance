@@ -2,7 +2,6 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.utils import timezone
 
 from apps.audit.services import record_entity_mutation
 
@@ -34,20 +33,50 @@ def create_expense_movement(*, actor, family, movement_data, allocations):
 
 
 @transaction.atomic
-def void_expense_movement(*, actor, movement, reason):
+def correct_expense_movement(*, actor, movement, reason, movement_data, allocations):
     movement = ExpenseMovement.objects.select_for_update().get(pk=movement.pk)
     if movement.status != MovementStatus.CONFIRMED:
-        raise ValidationError("Only confirmed movements can be voided.")
-    movement.status = MovementStatus.VOIDED
-    movement.void_reason = reason
-    movement.voided_at = timezone.now()
-    movement.save(update_fields=("status", "void_reason", "voided_at", "updated_at"))
+        raise ValidationError("Only confirmed movements can be corrected.")
+    if ExpenseMovement.objects.filter(reversal_of=movement).exists():
+        raise ValidationError("This movement has already been corrected.")
+    if movement_data.get("owner") != movement.owner:
+        raise ValidationError({"owner_id": "A correction cannot change the movement owner."})
+    reversal = ExpenseMovement.objects.create(
+        family=movement.family,
+        owner=movement.owner,
+        account=movement.account,
+        category=movement.category,
+        amount=movement.amount,
+        occurred_on=movement.occurred_on,
+        description=movement.description,
+        is_reversal=True,
+        reversal_of=movement,
+        correction_reason=reason,
+    )
+    for allocation in movement.allocations.all():
+        ExpenseAllocation.objects.create(
+            movement=reversal, member=allocation.member, amount=allocation.amount
+        )
+    replacement = create_expense_movement(
+        actor=actor,
+        family=movement.family,
+        movement_data={
+            **movement_data,
+            "replaces": movement,
+            "correction_reason": reason,
+        },
+        allocations=allocations,
+    )
     record_entity_mutation(
         actor=actor,
-        action="expense_movement.voided",
+        action="expense_movement.corrected",
         family=movement.family,
         entity_type="expense_movement",
         entity_id=movement.pk,
-        metadata={"reason": reason},
+        metadata={
+            "reason": reason,
+            "reversal_id": reversal.pk,
+            "replacement_id": replacement.pk,
+        },
     )
-    return movement
+    return reversal, replacement

@@ -33,7 +33,7 @@ def configuration_records(family_factory, membership_factory, user_factory):
     return {"admin": admin, "member": member, "family": family}
 
 
-def configuration_payload(member_id):
+def configuration_payload(member_id, other_member_id):
     return {
         "accounts": [{"key": "shared", "name": "Shared account", "owner_id": None}],
         "categories": [
@@ -48,21 +48,24 @@ def configuration_payload(member_id):
         ],
         "expense_forecasts": [
             {
-                "account_key": "shared", "category_key": "expense", "amount": "20.00",
+                "account_key": "shared", "category_key": "expense", "amount": "186.00",
                 "occurred_on": "2026-01-01", "effective_date": "2026-01-01", "recurrence": "MONTHLY",
                 "is_cigarettes": True,
-                "allocations": [{"member_id": member_id, "amount": "20.00"}],
+                "allocations": [
+                    {"member_id": member_id, "amount": "93.00"},
+                    {"member_id": other_member_id, "amount": "93.00"},
+                ],
             }
         ],
         "budget": {
             "month": "2026-01-01",
-            "lines": [{"name": "Living", "amount": "80.00"}, {"name": "Cigarettes", "amount": "20.00"}],
+            "lines": [{"name": "Living", "amount": "80.00"}, {"name": "Cigarettes", "amount": "186.00"}],
         },
         "free_money_allowances": [
             {"owner_id": member_id, "amount": "10.00", "effective_date": "2026-01-01"}
         ],
         "savings_distribution": {
-            "effective_date": "2026-01-01", "first_owner_id": member_id, "second_owner_id": 1,
+            "effective_date": "2026-01-01", "first_owner_id": member_id, "second_owner_id": other_member_id,
         },
         "matias_fund": {"target_amount": "500.00", "projected_balance": "25.00"},
     }
@@ -71,8 +74,7 @@ def configuration_payload(member_id):
 def test_initial_configuration_is_admin_only(api_client, configuration_records):
     data = configuration_records
     url = f"/api/v1/families/{data['family'].pk}/initial-forecast-configuration/"
-    payload = configuration_payload(data["member"].pk)
-    payload["savings_distribution"]["second_owner_id"] = data["admin"].pk
+    payload = configuration_payload(data["member"].pk, data["admin"].pk)
 
     anonymous = api_client.put(url, payload, format="json")
     api_client.force_authenticate(data["member"])
@@ -87,8 +89,7 @@ def test_initial_configuration_creates_only_planning_data_and_audits(api_client,
     data = configuration_records
     goal = SavingsGoal.objects.create(family=data["family"], name="Goal", target_amount="1000.00")
     url = f"/api/v1/families/{data['family'].pk}/initial-forecast-configuration/"
-    payload = configuration_payload(data["member"].pk)
-    payload["savings_distribution"]["second_owner_id"] = data["admin"].pk
+    payload = configuration_payload(data["member"].pk, data["admin"].pk)
     api_client.force_authenticate(data["admin"])
 
     response = api_client.put(url, payload, format="json")
@@ -99,7 +100,7 @@ def test_initial_configuration_creates_only_planning_data_and_audits(api_client,
     assert Category.objects.count() == 2
     assert IncomeForecast.objects.count() == 1
     assert ExpenseForecast.objects.get().is_cigarettes is True
-    assert ExpenseForecastAllocation.objects.get().amount == Decimal("20.00")
+    assert list(ExpenseForecastAllocation.objects.values_list("amount", flat=True)) == [Decimal("93.00"), Decimal("93.00")]
     assert MonthlyBudgetForecast.objects.count() == 1
     assert BudgetLine.objects.count() == 2
     assert FreeMoneyAllowance.objects.count() == 1
@@ -114,12 +115,11 @@ def test_initial_configuration_creates_only_planning_data_and_audits(api_client,
 def test_initial_configuration_updates_existing_records_without_duplicates(api_client, configuration_records):
     data = configuration_records
     url = f"/api/v1/families/{data['family'].pk}/initial-forecast-configuration/"
-    payload = configuration_payload(data["member"].pk)
-    payload["savings_distribution"]["second_owner_id"] = data["admin"].pk
+    payload = configuration_payload(data["member"].pk, data["admin"].pk)
     api_client.force_authenticate(data["admin"])
     initial = api_client.put(url, payload, format="json")
 
-    update = configuration_payload(data["member"].pk)
+    update = configuration_payload(data["member"].pk, data["admin"].pk)
     update["accounts"][0]["id"] = initial.data["account_ids"][0]
     update["categories"][0]["id"] = initial.data["category_ids"][0]
     update["categories"][1]["id"] = initial.data["category_ids"][1]
@@ -130,8 +130,6 @@ def test_initial_configuration_updates_existing_records_without_duplicates(api_c
     update["free_money_allowances"][0]["id"] = initial.data["free_money_allowance_ids"][0]
     update["savings_distribution"]["id"] = initial.data["savings_distribution_id"]
     update["income_forecasts"][0]["amount"] = "150.00"
-    update["expense_forecasts"][0]["amount"] = "30.00"
-    update["expense_forecasts"][0]["allocations"][0]["amount"] = "30.00"
     update["budget"]["lines"][0]["amount"] = "90.00"
 
     response = api_client.put(url, update, format="json")
@@ -141,15 +139,14 @@ def test_initial_configuration_updates_existing_records_without_duplicates(api_c
     assert ExpenseForecast.objects.count() == 1
     assert MonthlyBudgetForecast.objects.count() == 1
     assert IncomeForecast.objects.get().amount == Decimal("150.00")
-    assert ExpenseForecastAllocation.objects.get().amount == Decimal("30.00")
+    assert list(ExpenseForecastAllocation.objects.values_list("amount", flat=True)) == [Decimal("93.00"), Decimal("93.00")]
     assert BudgetLine.objects.get(name="Living").amount == Decimal("90.00")
 
 
 def test_configuration_rejects_duplicate_cigarettes_and_budget_totals(api_client, configuration_records):
     data = configuration_records
     url = f"/api/v1/families/{data['family'].pk}/initial-forecast-configuration/"
-    payload = configuration_payload(data["member"].pk)
-    payload["savings_distribution"]["second_owner_id"] = data["admin"].pk
+    payload = configuration_payload(data["member"].pk, data["admin"].pk)
     payload["expense_forecasts"].append(payload["expense_forecasts"][0].copy())
     payload["budget"]["lines"].append({"name": "cigarettes", "amount": "20.00"})
     api_client.force_authenticate(data["admin"])
@@ -161,15 +158,64 @@ def test_configuration_rejects_duplicate_cigarettes_and_budget_totals(api_client
     assert MonthlyBudgetForecast.objects.count() == 0
 
 
+def test_configuration_requires_fixed_cigarettes_values_and_single_budget_line(api_client, configuration_records):
+    data = configuration_records
+    url = f"/api/v1/families/{data['family'].pk}/initial-forecast-configuration/"
+    api_client.force_authenticate(data["admin"])
+    payload = configuration_payload(data["member"].pk, data["admin"].pk)
+    payload["expense_forecasts"][0]["amount"] = "185.99"
+
+    amount_response = api_client.put(url, payload, format="json")
+    payload = configuration_payload(data["member"].pk, data["admin"].pk)
+    payload["expense_forecasts"][0]["allocations"][1]["amount"] = "92.99"
+    allocation_response = api_client.put(url, payload, format="json")
+    payload = configuration_payload(data["member"].pk, data["admin"].pk)
+    payload["budget"]["lines"][1]["amount"] = "185.99"
+    budget_response = api_client.put(url, payload, format="json")
+
+    assert amount_response.status_code == status.HTTP_400_BAD_REQUEST
+    assert allocation_response.status_code == status.HTTP_400_BAD_REQUEST
+    assert budget_response.status_code == status.HTTP_400_BAD_REQUEST
+    assert ExpenseForecast.objects.count() == 0
+
+
+def test_configuration_requires_and_audits_private_to_shared_confirmation(api_client, configuration_records):
+    data = configuration_records
+    account = LogicalAccount.objects.create(
+        family=data["family"], owner=data["admin"], name="Private account"
+    )
+    url = f"/api/v1/families/{data['family'].pk}/initial-forecast-configuration/"
+    api_client.force_authenticate(data["admin"])
+    payload = configuration_payload(data["member"].pk, data["admin"].pk)
+    payload["accounts"][0] = {"id": account.pk, "key": "shared", "name": "Shared account", "owner_id": None}
+
+    rejected = api_client.put(url, payload, format="json")
+    account.refresh_from_db()
+    assert account.owner_id == data["admin"].pk
+    payload = configuration_payload(data["member"].pk, data["admin"].pk)
+    payload["accounts"][0] = {"id": account.pk, "key": "shared", "name": "Shared account", "owner_id": None}
+    payload["privacy_impact_confirmed"] = True
+    accepted = api_client.put(url, payload, format="json")
+    account.refresh_from_db()
+
+    assert rejected.status_code == status.HTTP_400_BAD_REQUEST
+    assert accepted.status_code == status.HTTP_200_OK
+    assert account.owner_id is None
+    assert AuditLog.objects.filter(
+        action="initial_forecast_configuration.updated",
+        metadata__privacy_impact_confirmed=True,
+        metadata__private_to_shared_transitions=[{"entity_type": "logicalaccount", "entity_id": account.pk}],
+    ).exists()
+
+
 def test_configuration_rejects_replayed_budget_lines_without_ids(api_client, configuration_records):
     data = configuration_records
     url = f"/api/v1/families/{data['family'].pk}/initial-forecast-configuration/"
-    payload = configuration_payload(data["member"].pk)
-    payload["savings_distribution"]["second_owner_id"] = data["admin"].pk
+    payload = configuration_payload(data["member"].pk, data["admin"].pk)
     api_client.force_authenticate(data["admin"])
 
     initial = api_client.put(url, payload, format="json")
-    replay = configuration_payload(data["member"].pk)
+    replay = configuration_payload(data["member"].pk, data["admin"].pk)
     replay["accounts"][0]["id"] = initial.data["account_ids"][0]
     replay["categories"][0]["id"] = initial.data["category_ids"][0]
     replay["categories"][1]["id"] = initial.data["category_ids"][1]
@@ -177,7 +223,6 @@ def test_configuration_rejects_replayed_budget_lines_without_ids(api_client, con
     replay["expense_forecasts"][0]["id"] = initial.data["expense_forecast_ids"][0]
     replay["free_money_allowances"][0]["id"] = initial.data["free_money_allowance_ids"][0]
     replay["savings_distribution"]["id"] = initial.data["savings_distribution_id"]
-    replay["savings_distribution"]["second_owner_id"] = data["admin"].pk
     replay = api_client.put(url, replay, format="json")
 
     assert initial.status_code == status.HTTP_200_OK

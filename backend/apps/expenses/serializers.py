@@ -91,8 +91,12 @@ class ExpenseMovementSerializer(ExpenseRecordSerializer):
 
     class Meta(ExpenseRecordSerializer.Meta):
         model = ExpenseMovement
-        fields = ExpenseRecordSerializer.Meta.fields + ("void_reason", "voided_at", "allocations")
-        read_only_fields = ExpenseRecordSerializer.Meta.read_only_fields + ("void_reason", "voided_at")
+        fields = ExpenseRecordSerializer.Meta.fields + (
+            "void_reason", "voided_at", "is_reversal", "reversal_of", "replaces", "correction_reason", "allocations",
+        )
+        read_only_fields = ExpenseRecordSerializer.Meta.read_only_fields + (
+            "void_reason", "voided_at", "is_reversal", "reversal_of", "replaces", "correction_reason",
+        )
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -114,5 +118,8 @@ class ExpenseMovementSerializer(ExpenseRecordSerializer):
         return attrs
 
 
-class VoidMovementSerializer(serializers.Serializer):
+class CorrectExpenseMovementSerializer(ExpenseMovementSerializer):
     reason = serializers.CharField(trim_whitespace=True, min_length=1, max_length=1000)
+
+    class Meta(ExpenseMovementSerializer.Meta):
+        fields = ExpenseMovementSerializer.Meta.fields + ("reason",)
