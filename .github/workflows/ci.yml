@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   backend:
-    name: Backend tests and lint
+    name: Backend SQLite tests and lint
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -22,6 +22,45 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --frozen --group dev
       - run: uv run ruff check .
+      - run: uv run pytest
+
+  backend-postgres:
+    name: Backend PostgreSQL tests
+    runs-on: ubuntu-latest
+    env:
+      DJANGO_ALLOWED_HOSTS: ci.example.test
+      DJANGO_DEBUG: "0"
+      DJANGO_SECRET_KEY: ci-not-a-production-secret
+      DJANGO_USE_POSTGRES: "1"
+      POSTGRES_DB: mosquera_finance_ci
+      POSTGRES_HOST: localhost
+      POSTGRES_PASSWORD: ci-not-a-production-password
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: mosquera_finance_ci
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: mosquera_finance_ci
+          POSTGRES_PASSWORD: ci-not-a-production-password
+          POSTGRES_USER: mosquera_finance_ci
+        options: >-
+          --health-cmd "pg_isready --username=mosquera_finance_ci --dbname=mosquera_finance_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen --group dev
       - run: uv run pytest
 
   frontend:
@@ -56,3 +95,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker compose config -q
+
+  docker-build:
+    name: Docker image build validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --tag mosquera-finance-backend:ci ./backend
+      - run: docker build --tag mosquera-finance-frontend:ci ./frontend

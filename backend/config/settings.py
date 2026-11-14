@@ -72,9 +72,11 @@ TEMPLATES = [
 ]
 WSGI_APPLICATION = "config.wsgi.application"
 
-# Production defaults to PostgreSQL. SQLite requires an explicit local-development
-# opt-in, while pytest stays self-contained without a running PostgreSQL instance.
-if "pytest" in sys.modules or USE_LOCAL_SQLITE:
+# Production defaults to PostgreSQL. pytest uses SQLite unless CI explicitly
+# requests PostgreSQL, keeping local feedback fast while exercising production SQL.
+if USE_LOCAL_SQLITE or (
+    "pytest" in sys.modules and os.environ.get("DJANGO_USE_POSTGRES") != "1"
+):
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
