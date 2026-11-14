@@ -22,6 +22,13 @@ class MonthlyBudgetForecast(models.Model):
         super().clean()
         if self.month.day != 1:
             raise ValidationError({"month": "Budget month must be the first day of a month."})
+        if (
+            self.family_id
+            and self.month
+            and BudgetMonthClose.objects.filter(family_id=self.family_id, month=self.month).exists()
+            and not getattr(self, "_allow_closed_month_write", False)
+        ):
+            raise ValidationError("Closed budget months can only be changed through a historical correction.")
 
     def save(self, *args, **kwargs):
         self.full_clean()
@@ -55,6 +62,14 @@ class BudgetLine(models.Model):
     def clean(self):
         super().clean()
         errors = {}
+        if (
+            self.forecast_id
+            and BudgetMonthClose.objects.filter(
+                family_id=self.forecast.family_id, month=self.forecast.month
+            ).exists()
+            and not getattr(self, "_allow_closed_month_write", False)
+        ):
+            errors["forecast"] = "Closed budget months can only be changed through a historical correction."
         if not self.name.strip():
             errors["name"] = "Name cannot be blank."
         if self.replaces_id:
@@ -70,6 +85,58 @@ class BudgetLine(models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()
         return super().save(*args, **kwargs)
+
+
+class BudgetMonthCloseQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValidationError("Budget close snapshots are immutable.")
+
+    def delete(self):
+        raise ValidationError("Budget close snapshots are immutable.")
+
+
+class BudgetMonthCloseManager(models.Manager.from_queryset(BudgetMonthCloseQuerySet)):
+    pass
+
+
+class BudgetMonthClose(models.Model):
+    family = models.ForeignKey("families.Family", on_delete=models.PROTECT, related_name="budget_closes")
+    month = models.DateField()
+    forecast = models.ForeignKey(MonthlyBudgetForecast, on_delete=models.PROTECT, related_name="closes")
+    closed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    snapshot = models.JSONField()
+    closed_at = models.DateTimeField(auto_now_add=True)
+
+    objects = BudgetMonthCloseManager()
+
+    class Meta:
+        ordering = ("-month", "-pk")
+        constraints = [
+            models.UniqueConstraint(fields=("family", "month"), name="unique_budget_month_close"),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.month and self.month.day != 1:
+            errors["month"] = "Budget month must be the first day of a month."
+        if self.forecast_id and (
+            self.forecast.family_id != self.family_id or self.forecast.month != self.month
+        ):
+            errors["forecast"] = "Close forecast must belong to the same family and month."
+        if not isinstance(self.snapshot, dict):
+            errors["snapshot"] = "Close snapshot must be a JSON object."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Budget close snapshots are immutable.")
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Budget close snapshots are immutable.")
 
 
 class FreeMoneyAllowance(models.Model):

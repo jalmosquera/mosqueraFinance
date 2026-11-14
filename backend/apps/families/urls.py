@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    FamilyBootstrapView,
     FamilyDetailView,
     FamilyListView,
     FamilyMembershipDetailView,
@@ -10,6 +11,7 @@ from .views import (
 )
 
 urlpatterns = [
+    path("admin/family-bootstrap/", FamilyBootstrapView.as_view(), name="family-bootstrap"),
     path("families/<int:family_pk>/notification-preferences/", UserNotificationPreferenceView.as_view(), name="user-notification-preference"),
     path("families/<int:family_pk>/initial-forecast-configuration/", InitialForecastConfigurationView.as_view(), name="initial-forecast-configuration"),
     path("families/", FamilyListView.as_view(), name="family-list"),

@@ -10,6 +10,17 @@ class FamilySerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class FamilyBootstrapSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True, min_length=12, trim_whitespace=False)
+    family_name = serializers.CharField(max_length=120, trim_whitespace=True)
+
+    def validate_family_name(self, value):
+        if not value:
+            raise serializers.ValidationError("Family name cannot be blank.")
+        return value
+
+
 class FamilyMembershipSerializer(serializers.ModelSerializer):
     user_id = serializers.IntegerField(read_only=True)
 

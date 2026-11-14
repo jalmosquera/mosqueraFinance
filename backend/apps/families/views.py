@@ -3,17 +3,19 @@ from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.generics import ListAPIView, RetrieveAPIView
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.models import User
 from apps.audit.services import record_entity_mutation
 
+from .bootstrap import bootstrap_jalberth
 from .initial_forecast_serializers import InitialForecastConfigurationSerializer
 from .initial_forecast_services import configure_initial_forecasts
 from .models import Family, FamilyMembership, UserNotificationPreference
 from .serializers import (
+    FamilyBootstrapSerializer,
     FamilyMembershipSerializer,
     FamilySerializer,
     MembershipCreateSerializer,
@@ -29,6 +31,28 @@ class FamilyListView(ListAPIView):
 
     def get_queryset(self):
         return Family.objects.visible_to(self.request.user)
+
+
+class FamilyBootstrapView(APIView):
+    permission_classes = (IsAdminUser,)
+
+    def post(self, request):
+        serializer = FamilyBootstrapSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            user, family, membership = bootstrap_jalberth(
+                actor=request.user, **serializer.validated_data
+            )
+        except DjangoValidationError as error:
+            raise ValidationError(error.message_dict if hasattr(error, "message_dict") else error.messages) from error
+        return Response(
+            {
+                "user_id": user.pk,
+                "family": FamilySerializer(family).data,
+                "membership": FamilyMembershipSerializer(membership).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class FamilyDetailView(RetrieveAPIView):

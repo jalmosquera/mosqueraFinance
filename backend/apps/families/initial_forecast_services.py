@@ -8,6 +8,7 @@ from apps.budgets.models import (
     MonthlyBudgetForecast,
     SavingsDistributionRule,
 )
+from apps.budgets.services import require_open_budget_month
 from apps.expenses.models import ExpenseForecast, ExpenseForecastAllocation
 from apps.finance.models import Category, LogicalAccount, normalize_name
 from apps.incomes.models import IncomeForecast
@@ -116,6 +117,7 @@ def _upsert_forecasts(
 def _upsert_budget(*, family, data):
     if not data:
         return None
+    require_open_budget_month(family=family, month=data["month"])
     forecasts = MonthlyBudgetForecast.objects.filter(family=family, month=data["month"])
     if forecasts.count() > 1:
         raise ValidationError({"budget": "A month with multiple budget versions cannot be reconfigured here."})

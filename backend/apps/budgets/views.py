@@ -1,6 +1,8 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.shortcuts import get_object_or_404
-from rest_framework.exceptions import PermissionDenied
+from rest_framework import status
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.generics import ListCreateAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -17,12 +19,19 @@ from .models import (
 )
 from .serializers import (
     BudgetLineSerializer,
+    BudgetMonthCloseSerializer,
     FreeMoneyAllowanceSerializer,
+    HistoricalCorrectionSerializer,
     MonthlyBudgetForecastSerializer,
     ProjectedSavingsSerializer,
     SavingsDistributionRuleSerializer,
 )
-from .services import calculate_projected_savings
+from .services import (
+    calculate_projected_savings,
+    close_budget_month,
+    create_historical_correction,
+    require_open_budget_month,
+)
 
 
 class FamilyScopedBudgetView:
@@ -50,6 +59,12 @@ class BudgetForecastListCreateView(FamilyScopedBudgetView, ListCreateAPIView):
     @transaction.atomic
     def perform_create(self, serializer):
         self.require_admin()
+        try:
+            require_open_budget_month(
+                family=self.get_family(), month=serializer.validated_data["month"]
+            )
+        except DjangoValidationError as error:
+            raise ValidationError(error.message_dict if hasattr(error, "message_dict") else error.messages) from error
         forecast = serializer.save()
         record_entity_mutation(
             actor=self.request.user,
@@ -76,7 +91,12 @@ class BudgetLineListCreateView(FamilyScopedBudgetView, ListCreateAPIView):
     @transaction.atomic
     def perform_create(self, serializer):
         self.require_admin()
-        line = serializer.save(forecast=self.get_forecast())
+        forecast = self.get_forecast()
+        try:
+            require_open_budget_month(family=forecast.family, month=forecast.month)
+        except DjangoValidationError as error:
+            raise ValidationError(error.message_dict if hasattr(error, "message_dict") else error.messages) from error
+        line = serializer.save(forecast=forecast)
         record_entity_mutation(
             actor=self.request.user,
             action="budget_line.created",
@@ -140,3 +160,38 @@ class ProjectedSavingsView(FamilyScopedBudgetView, APIView):
         serializer = ProjectedSavingsSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         return Response(calculate_projected_savings(family=self.get_family(), **serializer.validated_data))
+
+
+class BudgetMonthCloseView(FamilyScopedBudgetView, APIView):
+    @transaction.atomic
+    def post(self, request, family_pk, forecast_pk):
+        self.require_admin()
+        forecast = get_object_or_404(
+            MonthlyBudgetForecast.objects.filter(family=self.get_family()), pk=forecast_pk
+        )
+        try:
+            close = close_budget_month(actor=request.user, forecast=forecast)
+        except DjangoValidationError as error:
+            raise ValidationError(error.message_dict if hasattr(error, "message_dict") else error.messages) from error
+        return Response(BudgetMonthCloseSerializer(close).data, status=status.HTTP_201_CREATED)
+
+
+class BudgetHistoricalCorrectionView(FamilyScopedBudgetView, APIView):
+    @transaction.atomic
+    def post(self, request, family_pk, forecast_pk):
+        self.require_admin()
+        forecast = get_object_or_404(
+            MonthlyBudgetForecast.objects.filter(family=self.get_family()), pk=forecast_pk
+        )
+        serializer = HistoricalCorrectionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            corrected = create_historical_correction(
+                actor=request.user,
+                forecast=forecast,
+                reason=serializer.validated_data["reason"],
+                lines=serializer.validated_data["lines"],
+            )
+        except DjangoValidationError as error:
+            raise ValidationError(error.message_dict if hasattr(error, "message_dict") else error.messages) from error
+        return Response(MonthlyBudgetForecastSerializer(corrected).data, status=status.HTTP_201_CREATED)

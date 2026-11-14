@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from .models import (
     BudgetLine,
+    BudgetMonthClose,
     FreeMoneyAllowance,
     MonthlyBudgetForecast,
     SavingsDistributionRule,
@@ -13,6 +14,37 @@ class BudgetLineSerializer(serializers.ModelSerializer):
         model = BudgetLine
         fields = ("id", "name", "amount", "kind", "replaces")
         read_only_fields = ("id",)
+
+
+class BudgetMonthCloseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BudgetMonthClose
+        fields = ("id", "family_id", "month", "forecast_id", "snapshot", "closed_at")
+        read_only_fields = fields
+
+
+class HistoricalCorrectionLineSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=120)
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=0)
+    kind = serializers.ChoiceField(choices=BudgetLine.Kind.choices, default=BudgetLine.Kind.STANDARD)
+
+
+class HistoricalCorrectionSerializer(serializers.Serializer):
+    reason = serializers.CharField(trim_whitespace=True, max_length=1000)
+    lines = HistoricalCorrectionLineSerializer(many=True, allow_empty=False)
+
+    def validate_reason(self, value):
+        if not value:
+            raise serializers.ValidationError("A historical correction reason is required.")
+        return value
+
+    def validate_lines(self, lines):
+        if sum(
+            line.get("kind", BudgetLine.Kind.STANDARD) == BudgetLine.Kind.RECONCILIATION
+            for line in lines
+        ) > 1:
+            raise serializers.ValidationError("A budget forecast can contain only one reconciliation line.")
+        return lines
 
 
 class MonthlyBudgetForecastSerializer(serializers.ModelSerializer):
@@ -38,7 +70,10 @@ class MonthlyBudgetForecastSerializer(serializers.ModelSerializer):
         return forecast
 
     def validate_lines(self, lines):
-        if sum(line["kind"] == BudgetLine.Kind.RECONCILIATION for line in lines) > 1:
+        if sum(
+            line.get("kind", BudgetLine.Kind.STANDARD) == BudgetLine.Kind.RECONCILIATION
+            for line in lines
+        ) > 1:
             raise serializers.ValidationError("A budget forecast can contain only one reconciliation line.")
         return lines
 
