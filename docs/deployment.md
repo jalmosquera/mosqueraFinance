@@ -12,11 +12,13 @@ All three services have health checks. The Django health check verifies database
 
 ## Configuration
 
-Copy `.env.example` to `.env`, then replace both secret placeholders with strong, unique values. Set `DJANGO_ALLOWED_HOSTS` to the comma-separated public hostnames before exposing the service. Do not quote values unless the shell syntax requires it.
+Copy `.env.example` to `.env`, then replace both secret placeholders with strong, unique values. Set `DJANGO_ALLOWED_HOSTS` to the comma-separated public hostnames. Compose hard-codes `DJANGO_DEBUG=0`; use the documented local Django/Vite workflow instead of weakening deployment security. Do not quote values unless the shell syntax requires it.
 
 The stack only listens on loopback and does not terminate TLS. Put a TLS-terminating reverse proxy in front of the published frontend port for an Internet-facing deployment. The proxy must set `X-Forwarded-Proto: https`; the internal Nginx proxy preserves that header so Django can enforce HTTPS redirects and secure cookies. No Cloudflare dependency is assumed.
 
 Production enables secure session and CSRF cookies, HTTPS redirects, HSTS, content-type sniffing protection, and a same-origin referrer policy. Do not bypass the TLS proxy: direct HTTP access will be redirected and cannot authenticate with secure cookies.
+
+The browser session expires when the browser closes and has an eight-hour maximum lifetime. Nginx applies a same-origin Content Security Policy and a restrictive Permissions Policy to the SPA and static assets; Django applies transport and framing protections to proxied API responses.
 
 ## Compose Operations
 

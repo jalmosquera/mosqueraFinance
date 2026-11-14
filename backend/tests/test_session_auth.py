@@ -34,6 +34,30 @@ def test_csrf_bootstrap_sets_cookie():
     assert "csrftoken" in response.cookies
 
 
+@override_settings(
+    SESSION_COOKIE_SECURE=True,
+    CSRF_COOKIE_SECURE=True,
+    SESSION_COOKIE_AGE=28800,
+    SESSION_EXPIRE_AT_BROWSER_CLOSE=True,
+)
+def test_session_cookie_uses_secure_browser_session(user_factory):
+    user_factory("jalberth")
+    client = csrf_client()
+
+    response = client.post(
+        "/api/v1/auth/login/",
+        data={"username": "jalberth", "password": "test-password"},
+        content_type="application/json",
+        HTTP_X_CSRFTOKEN=client.cookies["csrftoken"].value,
+    )
+
+    cookie = response.cookies["sessionid"]
+    assert cookie["secure"] is True
+    assert cookie["httponly"] is True
+    assert cookie["samesite"] == "Lax"
+    assert cookie["max-age"] == ""
+
+
 def test_login_requires_csrf_token(user_factory):
     user_factory("jalberth")
     client = Client(enforce_csrf_checks=True)

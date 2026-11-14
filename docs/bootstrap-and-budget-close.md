@@ -14,6 +14,8 @@ An equivalent API is `POST /api/v1/admin/family-bootstrap/`. It requires a Djang
 
 Configure planning values only afterward through the administrator-controlled initial forecast configuration flow.
 
+Before that flow can save its mandatory Cigarettes forecast, ensure both family members have active memberships. The provided template uses their member IDs to create the two required 93.00 EUR shared allocations. Account provisioning and membership creation remain controlled administrator operations; do not enter credentials or real movements in fixtures.
+
 ## Monthly Close
 
 A family administrator closes the latest version of a monthly forecast with:

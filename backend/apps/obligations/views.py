@@ -37,9 +37,6 @@ class PaymentObligationViewSet(viewsets.ReadOnlyModelViewSet):
 
     def list(self, request, *args, **kwargs):
         month = self._month(request)
-        materialize_family_occurrences(
-            family=self.get_family(), user=request.user, start=month, end=month
-        )
         queryset = self.filter_queryset(self.get_queryset()).filter(
             source_period=month
         )

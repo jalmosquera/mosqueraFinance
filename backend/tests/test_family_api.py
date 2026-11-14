@@ -111,3 +111,21 @@ def test_session_mutation_requires_csrf_token(
     )
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.parametrize("method,payload", [("patch", {"role": "MEMBER"}), ("patch", {"is_active": False}), ("delete", None)])
+def test_last_active_administrator_cannot_be_removed_or_demoted(
+    api_client, user_factory, family_factory, membership_factory, method, payload
+):
+    admin = user_factory("admin")
+    family = family_factory("Family")
+    membership = membership_factory(family, admin, role=FamilyMembership.Role.ADMIN)
+    api_client.force_authenticate(admin)
+    url = f"/api/v1/families/{family.pk}/memberships/{membership.pk}/"
+
+    response = getattr(api_client, method)(url, payload, format="json") if payload else api_client.delete(url)
+
+    membership.refresh_from_db()
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert membership.role == FamilyMembership.Role.ADMIN
+    assert membership.is_active is True

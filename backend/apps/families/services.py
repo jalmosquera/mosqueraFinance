@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.http import Http404
 
@@ -15,6 +16,21 @@ def _locked_active_admin(*, actor, family):
         )
     except FamilyMembership.DoesNotExist as error:
         raise Http404 from error
+
+
+def _preserve_active_administrator(*, membership, role, is_active):
+    if (
+        membership.role == FamilyMembership.Role.ADMIN
+        and membership.is_active
+        and (role != FamilyMembership.Role.ADMIN or not is_active)
+        and FamilyMembership.objects.select_for_update().filter(
+            family=membership.family,
+            role=FamilyMembership.Role.ADMIN,
+            is_active=True,
+        ).count()
+        == 1
+    ):
+        raise ValidationError("A family must retain one active administrator.")
 
 
 @transaction.atomic
@@ -40,6 +56,7 @@ def create_membership(*, actor, family, user, role, is_active=True):
 def update_membership(*, actor, membership, role, is_active):
     _locked_active_admin(actor=actor, family=membership.family)
     membership = FamilyMembership.objects.select_for_update().get(pk=membership.pk)
+    _preserve_active_administrator(membership=membership, role=role, is_active=is_active)
     membership.role = role
     membership.is_active = is_active
     membership.save(update_fields=("role", "is_active", "updated_at"))
@@ -57,6 +74,9 @@ def update_membership(*, actor, membership, role, is_active):
 def delete_membership(*, actor, membership):
     _locked_active_admin(actor=actor, family=membership.family)
     membership = FamilyMembership.objects.select_for_update().get(pk=membership.pk)
+    _preserve_active_administrator(
+        membership=membership, role=FamilyMembership.Role.MEMBER, is_active=False
+    )
     target_id = membership.pk
     family = membership.family
     metadata = {

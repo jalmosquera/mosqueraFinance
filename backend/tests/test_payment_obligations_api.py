@@ -58,8 +58,8 @@ def test_calendar_materializes_monthly_occurrences_after_effective_date(
     api_client.force_authenticate(data["first_member"])
     url = f"/api/v1/families/{data['family'].pk}/payment-obligations/"
 
-    january = api_client.get(url, {"month": "2030-01-01"})
-    february = api_client.get(url, {"month": "2030-02-01"})
+    january = api_client.post(url + "generate/", {"month": "2030-01-01"}, format="json")
+    february = api_client.post(url + "generate/", {"month": "2030-02-01"}, format="json")
 
     assert january.status_code == status.HTTP_200_OK
     assert january.data == []
@@ -88,15 +88,17 @@ def test_forecast_edits_preserve_historical_obligation_snapshot(
     )
     api_client.force_authenticate(data["first_member"])
     base_url = f"/api/v1/families/{data['family'].pk}/payment-obligations/"
-    api_client.get(base_url, {"month": historical_month.isoformat()})
-    api_client.get(base_url, {"month": future_month.isoformat()})
+    api_client.post(base_url + "generate/", {"month": historical_month.isoformat()}, format="json")
+    api_client.post(base_url + "generate/", {"month": future_month.isoformat()}, format="json")
 
     update_response = api_client.patch(
         f"/api/v1/families/{data['family'].pk}/income-forecasts/{forecast.pk}/",
         {"amount": "25.00"},
         format="json",
     )
-    future = api_client.get(base_url, {"month": future_month.isoformat()})
+    future = api_client.post(
+        base_url + "generate/", {"month": future_month.isoformat()}, format="json"
+    )
     historical = PaymentObligation.objects.get(
         income_forecast=forecast, source_period=historical_month
     )
@@ -104,6 +106,25 @@ def test_forecast_edits_preserve_historical_obligation_snapshot(
     assert update_response.status_code == status.HTTP_200_OK
     assert historical.amount == Decimal("10.00")
     assert future.data[0]["amount"] == "25.00"
+
+
+def test_listing_obligations_never_materializes_forecasts(api_client, obligation_records):
+    data = obligation_records
+    month = date(2030, 2, 1)
+    IncomeForecast.objects.create(
+        family=data["family"], owner=data["first_member"], account=data["account"],
+        category=data["income_category"], amount=Decimal("10.00"), occurred_on=month,
+        effective_date=month, recurrence="MONTHLY",
+    )
+    api_client.force_authenticate(data["first_member"])
+
+    response = api_client.get(
+        f"/api/v1/families/{data['family'].pk}/payment-obligations/", {"month": month.isoformat()}
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data == []
+    assert not PaymentObligation.objects.exists()
 
 
 def test_settlement_marks_paid_and_rejects_a_second_settlement(api_client, obligation_records):

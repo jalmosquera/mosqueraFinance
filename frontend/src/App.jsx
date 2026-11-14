@@ -339,16 +339,11 @@ export function App() {
 
         {families.length > 1 && activeSection !== "Ajustes" && <label className="mt-6 block text-sm text-slate-400">Familia<select value={familyId} onChange={(event) => setFamilyId(event.target.value)} className="mt-2 block w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-3 text-sm font-medium text-white">{families.map((family) => <option key={family.id} value={family.id}>{family.name}</option>)}</select></label>}
 
-        {activeSection !== "Ajustes" && <div className="mt-8 flex rounded-2xl bg-slate-900 p-1" role="tablist" aria-label="Vista financiera">
+        {activeSection !== "Ajustes" && <div className="mt-8 flex rounded-2xl bg-slate-900 p-1" aria-label="Vista financiera">
           {tabs.map((tab) => (
             <button
               key={tab}
               type="button"
-              role="tab"
-              id={`financial-tab-${tab}`}
-              aria-controls="financial-panel"
-              aria-selected={activeTab === tab}
-              tabIndex={activeTab === tab ? 0 : -1}
               onClick={() => setActiveTab(tab)}
               className={`flex-1 rounded-xl px-2 py-2.5 text-xs font-semibold transition motion-reduce:transition-none ${activeTab === tab ? "bg-slate-700 text-white shadow-sm" : "text-slate-500"}`}
             >
@@ -357,7 +352,7 @@ export function App() {
           ))}
         </div>}
 
-        <div className="mt-6" id="financial-panel" role={activeSection === "Ajustes" ? undefined : "tabpanel"} aria-labelledby={activeSection === "Ajustes" ? undefined : `financial-tab-${activeTab}`}>
+        <div className="mt-6">
           {activeSection === "Ajustes" && shouldShowOnboarding && <FirstRunOnboarding isAdmin={isAdmin} onConfigure={openInitialConfiguration} reviewed={initialConfigurationReviewed} setReviewed={setInitialConfigurationReviewed} />}
           {activeSection === "Ajustes" && familyId && !shouldShowOnboarding && <Settings accounts={visibleData?.accounts || []} categories={visibleData?.categories || []} data={visibleData} expenseForecasts={visibleData?.expenseForecasts || []} families={families} familyId={familyId} incomeForecasts={visibleData?.incomeForecasts || []} isAdmin={isAdmin} onChanged={reloadFamilyData} onFamilyChange={setFamilyId} onLogout={signOut} sessionUser={session.user} />}
           {activeSection !== "Ajustes" && state === "loading" && <section className="rounded-[2rem] border border-slate-900 bg-slate-900/40 p-5" aria-live="polite" role="status"><p className="text-sm font-medium text-slate-300">Cargando información protegida</p><div className="mt-4 space-y-3" aria-hidden="true"><div className="h-3 w-2/5 animate-pulse motion-reduce:animate-none rounded-full bg-slate-800" /><div className="h-3 w-full animate-pulse motion-reduce:animate-none rounded-full bg-slate-800" /></div></section>}

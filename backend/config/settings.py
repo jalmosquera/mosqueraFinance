@@ -2,12 +2,19 @@ import os
 import sys
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "development-only-secret-key")
 DEBUG = os.environ.get("DJANGO_DEBUG", "0") == "1"
 USE_LOCAL_SQLITE = os.environ.get("DJANGO_USE_SQLITE") == "1"
 IS_LOCAL_DEVELOPMENT = DEBUG or USE_LOCAL_SQLITE or "pytest" in sys.modules
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
+if not SECRET_KEY:
+    if IS_LOCAL_DEVELOPMENT:
+        SECRET_KEY = "development-only-secret-key"
+    else:
+        raise ImproperlyConfigured("DJANGO_SECRET_KEY must be set outside local development.")
 ALLOWED_HOSTS = (
     ["localhost", "127.0.0.1"]
     if IS_LOCAL_DEVELOPMENT
@@ -108,11 +115,15 @@ LOGIN_ATTEMPT_WINDOW_SECONDS = 300
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_SECURE = not IS_LOCAL_DEVELOPMENT
+SESSION_COOKIE_AGE = 60 * 60 * 8
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 CSRF_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SECURE = not IS_LOCAL_DEVELOPMENT
 CSRF_COOKIE_HTTPONLY = False
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"
+SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
 
 if not IS_LOCAL_DEVELOPMENT:
     # The TLS proxy must set this header and the internal Nginx proxy must preserve it.
@@ -121,3 +132,5 @@ if not IS_LOCAL_DEVELOPMENT:
     # Compose probes this endpoint directly over the internal network.
     SECURE_REDIRECT_EXEMPT = [r"^healthz$"]
     SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True

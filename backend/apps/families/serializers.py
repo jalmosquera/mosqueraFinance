@@ -23,6 +23,7 @@ class FamilyBootstrapSerializer(serializers.Serializer):
 
 class FamilyMembershipSerializer(serializers.ModelSerializer):
     user_id = serializers.IntegerField(read_only=True)
+    username = serializers.CharField(source="user.username", read_only=True)
 
     class Meta:
         model = FamilyMembership
@@ -30,6 +31,7 @@ class FamilyMembershipSerializer(serializers.ModelSerializer):
             "id",
             "family_id",
             "user_id",
+            "username",
             "role",
             "is_active",
             "created_at",

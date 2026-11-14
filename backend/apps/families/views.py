@@ -117,17 +117,23 @@ class FamilyMembershipDetailView(FamilyMembershipBaseView):
         membership = self.get_membership(self.get_family())
         serializer = MembershipUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        membership = update_membership(
-            actor=request.user,
-            membership=membership,
-            role=serializer.validated_data.get("role", membership.role),
-            is_active=serializer.validated_data.get("is_active", membership.is_active),
-        )
+        try:
+            membership = update_membership(
+                actor=request.user,
+                membership=membership,
+                role=serializer.validated_data.get("role", membership.role),
+                is_active=serializer.validated_data.get("is_active", membership.is_active),
+            )
+        except DjangoValidationError as error:
+            raise ValidationError(error.messages) from error
         return Response(FamilyMembershipSerializer(membership).data)
 
     def delete(self, request, family_pk, membership_pk):
         membership = self.get_membership(self.get_family())
-        delete_membership(actor=request.user, membership=membership)
+        try:
+            delete_membership(actor=request.user, membership=membership)
+        except DjangoValidationError as error:
+            raise ValidationError(error.messages) from error
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
