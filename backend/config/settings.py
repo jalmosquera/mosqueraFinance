@@ -7,10 +7,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "development-only-secret-key")
 DEBUG = os.environ.get("DJANGO_DEBUG", "0") == "1"
 USE_LOCAL_SQLITE = os.environ.get("DJANGO_USE_SQLITE") == "1"
+IS_LOCAL_DEVELOPMENT = DEBUG or USE_LOCAL_SQLITE or "pytest" in sys.modules
 ALLOWED_HOSTS = (
     ["localhost", "127.0.0.1"]
-    if DEBUG or USE_LOCAL_SQLITE
-    else os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",")
+    if IS_LOCAL_DEVELOPMENT
+    else [
+        host.strip()
+        for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",")
+        if host.strip()
+    ]
 )
 
 INSTALLED_APPS = [
@@ -102,7 +107,17 @@ LOGIN_ATTEMPT_WINDOW_SECONDS = 300
 
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
-SESSION_COOKIE_SECURE = not (DEBUG or USE_LOCAL_SQLITE)
+SESSION_COOKIE_SECURE = not IS_LOCAL_DEVELOPMENT
 CSRF_COOKIE_SAMESITE = "Lax"
-CSRF_COOKIE_SECURE = not (DEBUG or USE_LOCAL_SQLITE)
+CSRF_COOKIE_SECURE = not IS_LOCAL_DEVELOPMENT
 CSRF_COOKIE_HTTPONLY = False
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+
+if not IS_LOCAL_DEVELOPMENT:
+    # The TLS proxy must set this header and the internal Nginx proxy must preserve it.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_SSL_REDIRECT = True
+    # Compose probes this endpoint directly over the internal network.
+    SECURE_REDIRECT_EXEMPT = [r"^healthz$"]
+    SECURE_HSTS_SECONDS = 31536000

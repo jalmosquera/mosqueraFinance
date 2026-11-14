@@ -4,7 +4,7 @@ This repository includes a production-oriented Docker Compose foundation. It is 
 
 ## Services
 
-- `frontend`: Nginx serves the Vite build and publishes `${APP_PORT:-8080}`. It proxies same-origin `/api/` requests to Django.
+- `frontend`: Nginx serves the Vite build on `127.0.0.1:${APP_PORT:-8080}`. It proxies same-origin `/api/` requests to Django.
 - `backend`: Gunicorn runs Django internally on port 8000. It applies migrations before serving requests.
 - `db`: PostgreSQL is reachable only on the Compose network. It has no host port mapping.
 
@@ -12,9 +12,11 @@ All three services have health checks. The Django health check verifies database
 
 ## Configuration
 
-Copy `.env.example` to `.env`, then replace both secret placeholders with strong, unique values. Set `DJANGO_ALLOWED_HOSTS` to the comma-separated public hostnames before exposing the service.
+Copy `.env.example` to `.env`, then replace both secret placeholders with strong, unique values. Set `DJANGO_ALLOWED_HOSTS` to the comma-separated public hostnames before exposing the service. Do not quote values unless the shell syntax requires it.
 
-The stack only serves HTTP itself. Put a TLS-terminating reverse proxy in front of the published frontend port for an Internet-facing deployment. No Cloudflare dependency is assumed.
+The stack only listens on loopback and does not terminate TLS. Put a TLS-terminating reverse proxy in front of the published frontend port for an Internet-facing deployment. The proxy must set `X-Forwarded-Proto: https`; the internal Nginx proxy preserves that header so Django can enforce HTTPS redirects and secure cookies. No Cloudflare dependency is assumed.
+
+Production enables secure session and CSRF cookies, HTTPS redirects, HSTS, content-type sniffing protection, and a same-origin referrer policy. Do not bypass the TLS proxy: direct HTTP access will be redirected and cannot authenticate with secure cookies.
 
 ## Compose Operations
 
@@ -30,11 +32,11 @@ Inspect service health with:
 docker compose ps
 ```
 
-The only published port is the frontend's `APP_PORT`. Do not add a `ports` entry to `db`.
+The only published port is the frontend's loopback `APP_PORT`. Do not add a `ports` entry to `db` or bind the frontend to all interfaces; the TLS proxy should be the only Internet-facing component.
 
 ## Backups And Restore
 
-Backups are PostgreSQL custom-format dumps written under the gitignored `backups/` directory. Load the Compose environment first, then run:
+Backups are PostgreSQL custom-format dumps written under the gitignored `backups/` directory. The directory and dumps are owner-only. The script writes to a temporary file first, so a failed dump never appears as a completed backup. Load the Compose environment first, then run:
 
 ```sh
 set -a; . ./.env; set +a
@@ -43,12 +45,12 @@ set -a; . ./.env; set +a
 
 Test backups periodically on a separate non-production Compose project or host.
 
-Restore replaces database objects and data. Stop the backend first so no request writes during the restore, then run:
+Restore replaces database objects and data. Stop the backend first so no request writes during the restore. The script validates that the selected file is a PostgreSQL archive before it performs destructive work, then requires an explicit confirmation. Run:
 
 ```sh
 docker compose stop backend
 set -a; . ./.env; set +a
-./scripts/restore-postgres.sh backups/mosquera-finance-YYYYMMDDTHHMMSSZ.dump
+RESTORE_CONFIRM=RESTORE ./scripts/restore-postgres.sh backups/mosquera-finance-YYYYMMDDTHHMMSSZ.dump
 docker compose start backend
 ```
 
