@@ -1,5 +1,7 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.shortcuts import get_object_or_404
 from rest_framework import status
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -7,6 +9,8 @@ from rest_framework.views import APIView
 
 from apps.accounts.models import User
 
+from .initial_forecast_serializers import InitialForecastConfigurationSerializer
+from .initial_forecast_services import configure_initial_forecasts
 from .models import Family, FamilyMembership
 from .serializers import (
     FamilyMembershipSerializer,
@@ -99,3 +103,23 @@ class FamilyMembershipDetailView(FamilyMembershipBaseView):
         membership = self.get_membership(self.get_family())
         delete_membership(actor=request.user, membership=membership)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class InitialForecastConfigurationView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def put(self, request, family_pk):
+        family = get_object_or_404(Family.objects.visible_to(request.user), pk=family_pk)
+        if not FamilyMembership.objects.active_admin_for(request.user, family).exists():
+            raise PermissionDenied("Only family administrators can configure initial forecasts.")
+        serializer = InitialForecastConfigurationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            result = configure_initial_forecasts(
+                actor=request.user,
+                family=family,
+                data=serializer.validated_data,
+            )
+        except DjangoValidationError as error:
+            raise ValidationError(error.message_dict) from error
+        return Response(result, status=status.HTTP_200_OK)

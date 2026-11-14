@@ -74,6 +74,57 @@ class ExpenseForecast(ExpenseRecord):
         max_length=8, choices=Recurrence.choices, default=Recurrence.NONE
     )
     effective_date = models.DateField()
+    is_cigarettes = models.BooleanField(default=False)
+
+    class Meta(ExpenseRecord.Meta):
+        constraints = ExpenseRecord.Meta.constraints + [
+            models.UniqueConstraint(
+                fields=("family",),
+                condition=Q(is_cigarettes=True, owner__isnull=True),
+                name="one_shared_cigarettes_forecast_per_family",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.is_cigarettes and self.owner_id is not None:
+            raise ValidationError({"owner": "The cigarettes forecast must be shared."})
+
+
+class ExpenseForecastAllocation(models.Model):
+    forecast = models.ForeignKey(
+        ExpenseForecast, on_delete=models.CASCADE, related_name="allocations"
+    )
+    member = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(amount__gt=0),
+                name="expense_forecast_allocation_amount_positive",
+            ),
+            models.UniqueConstraint(
+                fields=("forecast", "member"),
+                name="unique_expense_forecast_allocation_member",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.forecast_id and not self.forecast.is_cigarettes:
+            errors["forecast"] = "Only the cigarettes forecast can have planned allocations."
+        if self.forecast_id and not self.forecast.family.memberships.filter(
+            user_id=self.member_id, is_active=True
+        ).exists():
+            errors["member"] = "Allocation member must be active in family."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
 
 class ExpenseMovement(ExpenseRecord):

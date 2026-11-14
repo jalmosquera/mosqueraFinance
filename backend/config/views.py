@@ -1,11 +1,11 @@
-from django.db import connection
+from django.db import DatabaseError, connection
 from django.http import JsonResponse
 
 
 def healthz(request):
     try:
         connection.ensure_connection()
-    except Exception:
+    except DatabaseError:
         return JsonResponse({"status": "unavailable"}, status=503)
 
     return JsonResponse({"status": "ok"})
