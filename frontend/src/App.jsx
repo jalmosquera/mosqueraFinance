@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { bootstrapSession, getFamilies, getFamilyData, isForbidden, isUnauthenticated, login, logout } from "./api";
 import { createExportImage, downloadImage } from "./exportImage";
 import { createExportPayload } from "./exportPayload";
+import { formatDate, formatMonth } from "./formatDate";
 import { formatMoney } from "./formatMoney";
 import { Settings } from "./Settings";
 
@@ -84,17 +85,17 @@ function LoginScreen({ onAuthenticated }) {
   }
 
   return (
-    <main className="flex min-h-dvh items-center bg-slate-950 px-5 py-8 text-slate-100">
+    <main className="flex min-h-dvh items-center bg-slate-950 pb-[max(2rem,env(safe-area-inset-bottom))] pl-[max(1.25rem,env(safe-area-inset-left))] pr-[max(1.25rem,env(safe-area-inset-right))] pt-[max(2rem,env(safe-area-inset-top))] text-slate-100">
       <section className="mx-auto w-full max-w-md rounded-[2rem] border border-slate-800 bg-slate-900/70 p-6 shadow-2xl shadow-slate-950/40">
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-400/10 text-lg font-bold text-emerald-300">MF</div>
         <p className="mt-6 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">Mosquera Finance</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Tu espacio familiar</h1>
         <p className="mt-3 text-sm leading-6 text-slate-400">Ingresá para consultar la información que tenés autorizada.</p>
         <form className="mt-7 space-y-4" onSubmit={submit}>
-          <label className="block text-sm font-medium text-slate-300">Usuario<input autoComplete="username" className="mt-2 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-base text-white outline-none transition focus:border-emerald-300" onChange={(event) => setUsername(event.target.value)} required value={username} /></label>
-          <label className="block text-sm font-medium text-slate-300">Contraseña<input autoComplete="current-password" className="mt-2 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-base text-white outline-none transition focus:border-emerald-300" onChange={(event) => setPassword(event.target.value)} required type="password" value={password} /></label>
+          <label className="block text-sm font-medium text-slate-300">Usuario<input autoComplete="username" className="mt-2 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-base text-white outline-none transition motion-reduce:transition-none focus:border-emerald-300" onChange={(event) => setUsername(event.target.value)} required value={username} /></label>
+          <label className="block text-sm font-medium text-slate-300">Contraseña<input autoComplete="current-password" className="mt-2 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-base text-white outline-none transition motion-reduce:transition-none focus:border-emerald-300" onChange={(event) => setPassword(event.target.value)} required type="password" value={password} /></label>
           {status === "error" && <p className="rounded-xl border border-rose-900/60 bg-rose-950/30 px-3 py-2 text-sm text-rose-200" role="alert">No se pudo iniciar sesión. Verificá tus datos e intentá nuevamente.</p>}
-          <button className="w-full rounded-xl bg-emerald-300 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60" disabled={status === "submitting"} type="submit">{status === "submitting" ? "Ingresando..." : "Iniciar sesión"}</button>
+          <button aria-busy={status === "submitting"} className="w-full rounded-xl bg-emerald-300 px-4 py-3 text-sm font-semibold text-slate-950 transition motion-reduce:transition-none hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60" disabled={status === "submitting"} type="submit">{status === "submitting" ? "Ingresando..." : "Iniciar sesión"}</button>
         </form>
         <p className="mt-5 text-center text-xs leading-5 text-slate-500">Tu sesión se mantiene protegida en este dispositivo.</p>
       </section>
@@ -142,12 +143,12 @@ function ExportCards({ data, familyName, sessionUser }) {
       <p className="mt-2 text-sm leading-6 text-slate-400">Se crea una tarjeta PNG por destinatario. La tarjeta de Raiza solo incluye datos compartidos y sus propios datos autorizados.</p>
       <fieldset className="mt-4 grid grid-cols-3 gap-2" disabled={status === "loading"}>
         <legend className="sr-only">Destinatario</legend>
-        {[{ value: "Raiza", label: "Raiza" }, { value: "Jalberth", label: "Jalberth" }, { value: "both", label: "Ambos" }].map((option) => <button key={option.value} type="button" onClick={() => setRecipient(option.value)} className={`rounded-xl border px-2 py-2 text-xs font-semibold ${recipient === option.value ? "border-emerald-300 bg-emerald-300 text-slate-950" : "border-slate-700 text-slate-300"}`}>{option.label}</button>)}
+        {[{ value: "Raiza", label: "Raiza" }, { value: "Jalberth", label: "Jalberth" }, { value: "both", label: "Ambos" }].map((option) => <label key={option.value} className={`flex min-h-11 cursor-pointer items-center justify-center rounded-xl border px-2 py-2 text-xs font-semibold focus-within:outline-2 focus-within:outline-offset-3 focus-within:outline-emerald-300 ${recipient === option.value ? "border-emerald-300 bg-emerald-300 text-slate-950" : "border-slate-700 text-slate-300"}`}><input checked={recipient === option.value} className="sr-only" name="export-recipient" onChange={() => setRecipient(option.value)} type="radio" value={option.value} />{option.label}</label>)}
       </fieldset>
       {error && <p className="mt-3 text-sm text-rose-200" role="alert">{error}</p>}
       {status === "shared" && <p className="mt-3 text-sm text-emerald-200" role="status">Tarjeta compartida.</p>}
       {status === "downloaded" && <p className="mt-3 text-sm text-emerald-200" role="status">La descarga empezó porque compartir archivos no está disponible.</p>}
-      <button type="button" onClick={exportCards} disabled={status === "loading"} className="mt-4 w-full rounded-xl bg-emerald-300 px-4 py-3 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">{status === "loading" ? "Generando tarjetas..." : "Generar y compartir PNG"}</button>
+      <button aria-busy={status === "loading"} type="button" onClick={exportCards} disabled={status === "loading"} className="mt-4 w-full rounded-xl bg-emerald-300 px-4 py-3 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60">{status === "loading" ? "Generando tarjetas..." : "Generar y compartir PNG"}</button>
     </section>
   );
 }
@@ -254,7 +255,7 @@ export function App() {
   const visibleData = loadedFamilyId === familyId ? data : null;
 
   if (session.status === "loading") {
-    return <main className="flex min-h-dvh items-center justify-center bg-slate-950 px-5 text-sm font-medium text-slate-300">Preparando sesión segura...</main>;
+    return <main aria-live="polite" className="flex min-h-dvh items-center justify-center bg-slate-950 px-5 text-sm font-medium text-slate-300" role="status">Preparando sesión segura...</main>;
   }
 
   if (session.status === "unauthenticated") {
@@ -280,43 +281,46 @@ export function App() {
               key={tab}
               type="button"
               role="tab"
+              id={`financial-tab-${tab}`}
+              aria-controls="financial-panel"
               aria-selected={activeTab === tab}
+              tabIndex={activeTab === tab ? 0 : -1}
               onClick={() => setActiveTab(tab)}
-              className={`flex-1 rounded-xl px-2 py-2.5 text-xs font-semibold transition ${activeTab === tab ? "bg-slate-700 text-white shadow-sm" : "text-slate-500"}`}
+              className={`flex-1 rounded-xl px-2 py-2.5 text-xs font-semibold transition motion-reduce:transition-none ${activeTab === tab ? "bg-slate-700 text-white shadow-sm" : "text-slate-500"}`}
             >
               {tab}
             </button>
           ))}
         </div>}
 
-        <div className="mt-6">
+        <div className="mt-6" id="financial-panel" role={activeSection === "Ajustes" ? undefined : "tabpanel"} aria-labelledby={activeSection === "Ajustes" ? undefined : `financial-tab-${activeTab}`}>
           {activeSection === "Ajustes" && familyId && <Settings accounts={visibleData?.accounts || []} categories={visibleData?.categories || []} expenseForecasts={visibleData?.expenseForecasts || []} families={families} familyId={familyId} incomeForecasts={visibleData?.incomeForecasts || []} onChanged={reloadFamilyData} onFamilyChange={setFamilyId} onLogout={signOut} sessionUser={session.user} />}
-          {activeSection !== "Ajustes" && state === "loading" && <section className="rounded-[2rem] border border-slate-900 bg-slate-900/40 p-5" aria-label="Cargando datos"><p className="text-sm font-medium text-slate-300">Cargando información protegida</p><div className="mt-4 space-y-3" aria-hidden="true"><div className="h-3 w-2/5 animate-pulse rounded-full bg-slate-800" /><div className="h-3 w-full animate-pulse rounded-full bg-slate-800" /></div></section>}
+          {activeSection !== "Ajustes" && state === "loading" && <section className="rounded-[2rem] border border-slate-900 bg-slate-900/40 p-5" aria-live="polite" role="status"><p className="text-sm font-medium text-slate-300">Cargando información protegida</p><div className="mt-4 space-y-3" aria-hidden="true"><div className="h-3 w-2/5 animate-pulse motion-reduce:animate-none rounded-full bg-slate-800" /><div className="h-3 w-full animate-pulse motion-reduce:animate-none rounded-full bg-slate-800" /></div></section>}
           {activeSection !== "Ajustes" && state === "unauthenticated" && <EmptyState>Tu sesión no está disponible. Iniciá sesión para consultar la información autorizada.</EmptyState>}
-          {activeSection !== "Ajustes" && state === "forbidden" && <section className="rounded-[2rem] border border-amber-900/60 bg-amber-950/20 p-6"><h2 className="text-lg font-semibold text-white">No tenés acceso a esta información</h2><p className="mt-2 text-sm leading-6 text-slate-400">Por privacidad, no mostramos detalles de datos que no están autorizados para tu perfil.</p><button type="button" onClick={retry} className="mt-5 rounded-xl bg-amber-300 px-4 py-2 text-sm font-semibold text-slate-950">Reintentar</button></section>}
-          {activeSection !== "Ajustes" && state === "error" && <section className="rounded-[2rem] border border-rose-900/60 bg-rose-950/30 p-6"><h2 className="text-lg font-semibold text-white">No se pudo cargar la información</h2><p className="mt-2 text-sm leading-6 text-slate-400">Verificá la conexión e intentá nuevamente.</p><button type="button" onClick={retry} className="mt-5 rounded-xl bg-rose-300 px-4 py-2 text-sm font-semibold text-slate-950">Reintentar</button></section>}
+          {activeSection !== "Ajustes" && state === "forbidden" && <section className="rounded-[2rem] border border-amber-900/60 bg-amber-950/20 p-6" role="alert"><h2 className="text-lg font-semibold text-white">No tenés acceso a esta información</h2><p className="mt-2 text-sm leading-6 text-slate-400">Por privacidad, no mostramos detalles de datos que no están autorizados para tu perfil.</p><button type="button" onClick={retry} className="mt-5 rounded-xl bg-amber-300 px-4 py-2 text-sm font-semibold text-slate-950">Reintentar</button></section>}
+          {activeSection !== "Ajustes" && state === "error" && <section className="rounded-[2rem] border border-rose-900/60 bg-rose-950/30 p-6" role="alert"><h2 className="text-lg font-semibold text-white">No se pudo cargar la información</h2><p className="mt-2 text-sm leading-6 text-slate-400">Verificá la conexión e intentá nuevamente.</p><button type="button" onClick={retry} className="mt-5 rounded-xl bg-rose-300 px-4 py-2 text-sm font-semibold text-slate-950">Reintentar</button></section>}
           {activeSection !== "Ajustes" && state === "empty" && <EmptyState>No tenés una familia autorizada para consultar.</EmptyState>}
           {activeSection !== "Ajustes" && state === "ready" && visibleData && <div className="space-y-5">
-            {showProjection ? <Records title="Proyección" items={visibleData.projection.months}>{visibleData.projection.months.map((month) => <MoneyRecord key={month.month} record={{ description: month.month }} subtitle={`Ingresos ${formatMoney(month.income)} · Gastos ${formatMoney(month.expenses)} · Ahorro ${formatMoney(month.savings_contribution)}`} amount={month.net_after_savings} />)}</Records> : <>
+            {showProjection ? <Records title="Proyección" items={visibleData.projection.months}>{visibleData.projection.months.map((month) => <MoneyRecord key={month.month} record={{ description: formatMonth(month.month) }} subtitle={`Ingresos ${formatMoney(month.income)} · Gastos ${formatMoney(month.expenses)} · Ahorro ${formatMoney(month.savings_contribution)}`} amount={month.net_after_savings} />)}</Records> : <>
               <ExportCards data={visibleData} familyName={selectedFamily?.name || "Familia"} sessionUser={session.user} />
               <Records title="Cuentas" items={visibleData.accounts}>{visibleData.accounts.map((account) => <MoneyRecord key={account.id} record={{ description: account.name }} />)}</Records>
               <Records title="Categorías" items={visibleData.categories}>{visibleData.categories.map((category) => <MoneyRecord key={category.id} record={{ description: category.name }} subtitle={category.kind} />)}</Records>
               <Records title="Ingresos configurados" items={visibleData.incomeForecasts}>{visibleData.incomeForecasts.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.recurrence} />)}</Records>
-              <Records title="Ingresos confirmados" items={visibleData.incomeMovements}>{visibleData.incomeMovements.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.occurred_on} />)}</Records>
+              <Records title="Ingresos confirmados" items={visibleData.incomeMovements}>{visibleData.incomeMovements.map((record) => <MoneyRecord key={record.id} record={record} subtitle={formatDate(record.occurred_on)} />)}</Records>
               <Records title="Gastos configurados" items={visibleData.expenseForecasts}>{visibleData.expenseForecasts.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.recurrence} />)}</Records>
-              <Records title="Gastos confirmados" items={visibleData.expenseMovements}>{visibleData.expenseMovements.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.occurred_on} />)}</Records>
+              <Records title="Gastos confirmados" items={visibleData.expenseMovements}>{visibleData.expenseMovements.map((record) => <MoneyRecord key={record.id} record={record} subtitle={formatDate(record.occurred_on)} />)}</Records>
               <Records title="Objetivos de ahorro" items={visibleData.savingsGoals}>{visibleData.savingsGoals.map((goal) => <MoneyRecord key={goal.id} record={{ description: goal.name }} subtitle={`Saldo real ${formatMoney(goal.real_balance)} · Objetivo ${formatMoney(goal.target_amount)}`} amount={goal.projected_balance} />)}</Records>
-              <Records title="Movimientos de ahorro" items={visibleData.savingsMovements}>{visibleData.savingsMovements.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.occurred_on} />)}</Records>
+              <Records title="Movimientos de ahorro" items={visibleData.savingsMovements}>{visibleData.savingsMovements.map((record) => <MoneyRecord key={record.id} record={record} subtitle={formatDate(record.occurred_on)} />)}</Records>
               {visibleData.matiasFund && <Records title="Fondo Matías" items={[visibleData.matiasFund]}><MoneyRecord record={{ description: "Saldo real" }} subtitle={`Objetivo ${formatMoney(visibleData.matiasFund.target_amount)}`} amount={visibleData.matiasFund.real_balance} /></Records>}
             </>}
           </div>}
         </div>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-800 bg-slate-950/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur" aria-label="Navegación principal">
+      <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-800 bg-slate-950/95 pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-3 backdrop-blur" aria-label="Navegación principal">
         <div className="mx-auto grid max-w-md grid-cols-4 gap-1">
           {navigation.map((item) => (
-            <button key={item.label} type="button" onClick={() => setActiveSection(item.label)} className={`flex flex-col items-center gap-1 rounded-xl py-1.5 text-[11px] font-medium transition ${activeSection === item.label ? "text-emerald-300" : "text-slate-500"}`}>
+            <button key={item.label} type="button" onClick={() => setActiveSection(item.label)} aria-current={activeSection === item.label ? "page" : undefined} className={`flex flex-col items-center gap-1 rounded-xl py-1.5 text-[11px] font-medium transition motion-reduce:transition-none ${activeSection === item.label ? "text-emerald-300" : "text-slate-500"}`}>
               <span className={`flex h-8 w-11 items-center justify-center rounded-xl ${activeSection === item.label ? "bg-emerald-400/10" : ""}`}><Icon name={item.icon} /></span>
               {item.label}
             </button>
