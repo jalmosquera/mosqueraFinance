@@ -15,6 +15,7 @@ import {
 import { formatMoney } from "./formatMoney";
 import { formatDate } from "./formatDate";
 import { browserPermission, clearLocalReminder, preferencePermission, requestBrowserPermission, scheduleLocalReminder } from "./notifications";
+import { FinanceCrud, InitialConfiguration } from "./FinanceCrud";
 
 const fieldClass = "mt-2 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-base text-white outline-none transition motion-reduce:transition-none focus:border-emerald-300";
 const secondaryButtonClass = "min-h-11 rounded-xl border border-slate-700 px-3 py-2 text-sm font-semibold text-slate-200 disabled:cursor-not-allowed disabled:opacity-50";
@@ -229,7 +230,7 @@ function Obligations({ familyId, memberships }) {
   </Panel>;
 }
 
-export function Settings({ accounts, categories, familyId, families, incomeForecasts, expenseForecasts, onChanged, onFamilyChange, onLogout, sessionUser }) {
+export function Settings({ accounts, categories, data, familyId, families, incomeForecasts, expenseForecasts, isAdmin, onChanged, onFamilyChange, onLogout, sessionUser }) {
   const [panel, setPanel] = useState("profile");
   const [memberships, setMemberships] = useState([]);
   useEffect(() => {
@@ -238,7 +239,7 @@ export function Settings({ accounts, categories, familyId, families, incomeForec
     getMemberships(familyId, controller.signal).then(setMemberships).catch(() => setMemberships([]));
     return () => controller.abort();
   }, [familyId]);
-  const panels = [{ id: "profile", label: "Perfil" }, { id: "notifications", label: "Avisos" }, { id: "categories", label: "Categorías" }, { id: "accounts", label: "Cuentas" }, { id: "forecasts", label: "Pronósticos" }, { id: "obligations", label: "Obligaciones" }];
+  const panels = [{ id: "profile", label: "Perfil" }, { id: "notifications", label: "Avisos" }, { id: "categories", label: "Categorías" }, { id: "accounts", label: "Cuentas" }, { id: "forecasts", label: "Pronósticos" }, { id: "movements", label: "Reales" }, { id: "savings", label: "Ahorros" }, { id: "setup", label: "Inicial" }, { id: "obligations", label: "Obligaciones" }];
   return <div className="mt-8 space-y-5">
     <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Ajustes">{panels.map((item) => <button aria-controls="settings-panel" aria-selected={panel === item.id} className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${panel === item.id ? "bg-emerald-300 text-slate-950" : "bg-slate-900 text-slate-400"}`} id={`settings-tab-${item.id}`} key={item.id} onClick={() => setPanel(item.id)} role="tab" tabIndex={panel === item.id ? 0 : -1} type="button">{item.label}</button>)}</div>
     <div aria-labelledby={`settings-tab-${panel}`} id="settings-panel" role="tabpanel">
@@ -247,6 +248,9 @@ export function Settings({ accounts, categories, familyId, families, incomeForec
     {panel === "categories" && <NamedRecordsManager category familyId={familyId} onChanged={onChanged} records={categories} resource="categories" sessionUser={sessionUser} title="Categorías" />}
     {panel === "accounts" && <NamedRecordsManager familyId={familyId} onChanged={onChanged} records={accounts} resource="logical-accounts" sessionUser={sessionUser} title="Cuentas lógicas" />}
     {panel === "forecasts" && <><ForecastManager accounts={accounts} categories={categories} familyId={familyId} onChanged={onChanged} records={incomeForecasts} sessionUser={sessionUser} type="income" /><div className="h-5" /><ForecastManager accounts={accounts} categories={categories} familyId={familyId} onChanged={onChanged} records={expenseForecasts} sessionUser={sessionUser} type="expense" /></>}
+    {panel === "movements" && data && <FinanceCrud accounts={accounts} categories={categories} data={data} familyId={familyId} isAdmin={isAdmin} memberships={memberships} onChanged={onChanged} sessionUser={sessionUser} showSavings={false} />}
+    {panel === "savings" && data && <FinanceCrud accounts={accounts} categories={categories} data={data} familyId={familyId} isAdmin={isAdmin} memberships={memberships} onChanged={onChanged} sessionUser={sessionUser} showMovements={false} />}
+    {panel === "setup" && <InitialConfiguration familyId={familyId} isAdmin={isAdmin} memberships={memberships} onSaved={onChanged} />}
     {panel === "obligations" && <Obligations familyId={familyId} memberships={memberships} />}
     </div>
   </div>;

@@ -1,0 +1,133 @@
+import { useEffect, useState } from "react";
+import {
+  apiErrorMessage,
+  configureInitialForecasts,
+  correctMovement,
+  createBudgetRecord,
+  createMatiasFund,
+  createMovement,
+  getBudgetData,
+  updateMatiasFund,
+  voidMovement
+} from "./api";
+import { formatDate } from "./formatDate";
+import { formatMoney } from "./formatMoney";
+
+const fieldClass = "mt-2 block w-full rounded-xl border border-slate-700 bg-black px-3 py-3 text-base text-white outline-none focus:border-orange-300";
+const buttonClass = "rounded-xl bg-orange-300 px-3 py-3 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-60";
+
+function Panel({ title, children }) {
+  return <section className="rounded-[2rem] border border-slate-800 bg-slate-950 p-5"><h2 className="text-lg font-semibold text-white">{title}</h2>{children}</section>;
+}
+
+function Message({ error, success }) {
+  return error ? <p className="mt-3 text-sm text-rose-200" role="alert">{error}</p> : success ? <p className="mt-3 text-sm text-orange-200" role="status">{success}</p> : null;
+}
+
+function toCents(value) {
+  const match = String(value).trim().match(/^(\d+)(?:[,.](\d{1,2}))?$/);
+  if (!match) return null;
+  return BigInt(match[1]) * 100n + BigInt((match[2] || "").padEnd(2, "0"));
+}
+
+function exactAllocationTotal(amount, allocations) {
+  const total = toCents(amount);
+  return total !== null && allocations.length > 0 && allocations.every((allocation) => toCents(allocation.amount) !== null) && allocations.reduce((sum, allocation) => sum + toCents(allocation.amount), 0n) === total;
+}
+
+function AllocationFields({ allocations, memberships, onChange, label = "Asignaciones", ownerField = "member_id" }) {
+  function update(index, name, value) { onChange(allocations.map((item, position) => position === index ? { ...item, [name]: value } : item)); }
+  return <fieldset className="space-y-3"><legend className="text-sm font-medium text-slate-300">{label}</legend>{allocations.map((allocation, index) => <div className="grid grid-cols-[1fr_7rem_auto] gap-2" key={index}><select className={fieldClass} onChange={(event) => update(index, ownerField, event.target.value)} required value={allocation[ownerField]}><option value="">Integrante</option>{memberships.map((membership) => <option key={membership.user_id} value={membership.user_id}>{membership.username || `Usuario ${membership.user_id}`}</option>)}</select><input className={fieldClass} inputMode="decimal" onChange={(event) => update(index, "amount", event.target.value)} placeholder="0,00" required value={allocation.amount} /><button aria-label="Quitar asignación" className="mt-2 text-rose-200" onClick={() => onChange(allocations.filter((_, position) => position !== index))} type="button">Quitar</button></div>)}<button className="text-sm font-semibold text-orange-300" onClick={() => onChange([...allocations, { [ownerField]: "", amount: "" }])} type="button">Agregar asignación</button></fieldset>;
+}
+
+function RecordForm({ type, accounts, categories, memberships, sessionUser, record, onCancel, onSaved, familyId }) {
+  const expense = type === "expense";
+  const [form, setForm] = useState(() => record ? { ...record, scope: record.owner_id ? "private" : "shared", allocations: record.allocations?.map((item) => ({ member_id: String(item.member_id), amount: String(item.amount) })) || [] } : { description: "", amount: "", occurred_on: "", account_id: "", category_id: "", scope: "", allocations: [] });
+  const [reason, setReason] = useState("");
+  const [privacyConfirmed, setPrivacyConfirmed] = useState(false);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const usableCategories = categories.filter((category) => category.kind === (expense ? "EXPENSE" : "INCOME"));
+  function setValue(name, value) { setForm((current) => ({ ...current, [name]: value })); }
+  async function submit(event) {
+    event.preventDefault();
+    if (expense && form.scope === "shared" && !exactAllocationTotal(form.amount, form.allocations)) { setError("Las asignaciones deben sumar exactamente el importe, sin redondeos."); return; }
+    if (form.scope === "shared" && !privacyConfirmed) { setError("Confirmá el impacto de privacidad antes de guardar un movimiento compartido."); return; }
+    setSaving(true); setError("");
+    const payload = { description: form.description, amount: String(form.amount).replace(",", "."), occurred_on: form.occurred_on, account_id: Number(form.account_id), category_id: Number(form.category_id), owner_id: form.scope === "shared" ? null : sessionUser.id };
+    if (expense) payload.allocations = form.scope === "shared" ? form.allocations.map((item) => ({ member_id: Number(item.member_id), amount: String(item.amount).replace(",", ".") })) : [];
+    try {
+      const resource = `${type}-movements`;
+      if (record) {
+        if (!reason.trim()) throw new Error("Indicá el motivo de la corrección.");
+        await correctMovement(familyId, resource, record.id, { ...payload, reason: reason.trim() });
+      } else await createMovement(familyId, resource, payload);
+      onSaved();
+    } catch (requestError) { setError(requestError.message || apiErrorMessage(requestError)); } finally { setSaving(false); }
+  }
+  return <form className="mt-4 space-y-4 border-t border-slate-800 pt-4" onSubmit={submit}>
+    <label className="block text-sm font-medium text-slate-300">Descripción<input className={fieldClass} maxLength="255" onChange={(event) => setValue("description", event.target.value)} value={form.description || ""} /></label>
+    <label className="block text-sm font-medium text-slate-300">Importe<input className={fieldClass} inputMode="decimal" onChange={(event) => setValue("amount", event.target.value)} pattern="[0-9]+([,.][0-9]{1,2})?" required value={form.amount || ""} /></label>
+    <label className="block text-sm font-medium text-slate-300">Fecha<input className={fieldClass} onChange={(event) => setValue("occurred_on", event.target.value)} required type="date" value={form.occurred_on || ""} /></label>
+    <label className="block text-sm font-medium text-slate-300">Visibilidad<select className={fieldClass} disabled={Boolean(record)} onChange={(event) => setValue("scope", event.target.value)} required value={form.scope}><option value="">Elegí una visibilidad</option><option value="private">Privada para mí</option><option value="shared">Compartida</option></select></label>
+    {form.scope === "shared" && <label className="flex gap-3 text-sm text-slate-300"><input checked={privacyConfirmed} onChange={(event) => setPrivacyConfirmed(event.target.checked)} required type="checkbox" />Entiendo que los integrantes autorizados podrán ver este movimiento compartido.</label>}
+    <label className="block text-sm font-medium text-slate-300">Cuenta<select className={fieldClass} onChange={(event) => setValue("account_id", event.target.value)} required value={form.account_id || ""}><option value="">Elegí una cuenta</option>{accounts.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+    <label className="block text-sm font-medium text-slate-300">Categoría<select className={fieldClass} onChange={(event) => setValue("category_id", event.target.value)} required value={form.category_id || ""}><option value="">Elegí una categoría</option>{usableCategories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+    {expense && form.scope === "shared" && <AllocationFields allocations={form.allocations} memberships={memberships} onChange={(allocations) => setValue("allocations", allocations)} />}
+    {record && <label className="block text-sm font-medium text-slate-300">Motivo de la corrección<textarea className={fieldClass} maxLength="1000" onChange={(event) => setReason(event.target.value)} required value={reason} /></label>}
+    <Message error={error} /><div className="grid grid-cols-2 gap-3"><button className={buttonClass} disabled={saving} type="submit">{saving ? "Guardando..." : record ? "Corregir" : "Confirmar movimiento"}</button><button className="rounded-xl border border-slate-700 px-3 py-3 text-sm" onClick={onCancel} type="button">Cancelar</button></div>
+  </form>;
+}
+
+export function MovementManager({ type, records, accounts, categories, memberships, sessionUser, familyId, onChanged }) {
+  const [editing, setEditing] = useState(null); const [creating, setCreating] = useState(false);
+  const title = type === "income" ? "Ingresos confirmados" : "Gastos confirmados";
+  return <Panel title={title}><p className="mt-2 text-sm text-slate-400">Los movimientos confirmados no se eliminan: una corrección crea el reemplazo auditado y exige motivo.</p><div className="mt-4 divide-y divide-slate-800">{records.map((record) => <article className="py-3" key={record.id}><div className="flex justify-between gap-3"><div><p className="font-medium text-slate-200">{record.description || "Sin descripción"}</p><p className="text-xs text-slate-500">{formatDate(record.occurred_on)} · {record.status}</p></div><p className="font-semibold text-white">{formatMoney(record.amount)}</p></div>{record.status === "CONFIRMED" && <button className="mt-2 text-sm font-semibold text-orange-300" onClick={() => { setEditing(record); setCreating(false); }} type="button">Corregir</button>}</article>)}</div>{!creating && !editing && <button className={`${buttonClass} mt-4 w-full`} onClick={() => setCreating(true)} type="button">Registrar {type === "income" ? "ingreso" : "gasto"}</button>}{(creating || editing) && <RecordForm accounts={accounts} categories={categories} familyId={familyId} memberships={memberships} onCancel={() => { setCreating(false); setEditing(null); }} onSaved={() => { setCreating(false); setEditing(null); onChanged(); }} record={editing} sessionUser={sessionUser} type={type} />}</Panel>;
+}
+
+function SavingsManager({ goals, movements, sessionUser, familyId, onChanged }) {
+  const [form, setForm] = useState({ name: "", target_amount: "", projected_monthly_contribution: "", scope: "" }); const [movement, setMovement] = useState({ goal_id: "", kind: "CONTRIBUTION", amount: "", occurred_on: "", description: "" }); const [error, setError] = useState(""); const [saving, setSaving] = useState(false);
+  async function saveGoal(event) { event.preventDefault(); setSaving(true); setError(""); try { await createMovement(familyId, "savings-goals", { ...form, target_amount: form.target_amount.replace(",", "."), projected_monthly_contribution: form.projected_monthly_contribution.replace(",", "."), owner_id: form.scope === "shared" ? null : sessionUser.id }); setForm({ name: "", target_amount: "", projected_monthly_contribution: "", scope: "" }); onChanged(); } catch (requestError) { setError(apiErrorMessage(requestError)); } finally { setSaving(false); } }
+  async function saveMovement(event) { event.preventDefault(); setSaving(true); setError(""); try { await createMovement(familyId, "savings-movements", { ...movement, goal_id: Number(movement.goal_id), amount: movement.amount.replace(",", ".") }); setMovement({ goal_id: "", kind: "CONTRIBUTION", amount: "", occurred_on: "", description: "" }); onChanged(); } catch (requestError) { setError(apiErrorMessage(requestError)); } finally { setSaving(false); } }
+  async function voidRecord(record) { const reason = window.prompt("Motivo de la anulación:"); if (!reason) return; try { await voidMovement(familyId, "savings-movements", record.id, reason); onChanged(); } catch (requestError) { setError(apiErrorMessage(requestError)); } }
+  async function correctRecord(record) { const amount = window.prompt("Nuevo importe", record.amount); const reason = window.prompt("Motivo de la corrección"); if (!amount || !reason) return; try { await correctMovement(familyId, "savings-movements", record.id, { kind: record.kind, amount: amount.replace(",", "."), occurred_on: record.occurred_on, description: record.description, reason }); onChanged(); } catch (requestError) { setError(apiErrorMessage(requestError)); } }
+  return <><Panel title="Objetivos de ahorro"><div className="mt-3 space-y-2">{goals.map((goal) => <p key={goal.id} className="text-sm text-slate-300">{goal.name}: real {formatMoney(goal.real_balance)} / objetivo {formatMoney(goal.target_amount)}</p>)}</div><form className="mt-4 space-y-3" onSubmit={saveGoal}><input className={fieldClass} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Nombre del objetivo" required value={form.name} /><input className={fieldClass} inputMode="decimal" onChange={(event) => setForm({ ...form, target_amount: event.target.value })} placeholder="Objetivo" required value={form.target_amount} /><input className={fieldClass} inputMode="decimal" onChange={(event) => setForm({ ...form, projected_monthly_contribution: event.target.value })} placeholder="Aporte mensual proyectado" required value={form.projected_monthly_contribution} /><select className={fieldClass} onChange={(event) => setForm({ ...form, scope: event.target.value })} required value={form.scope}><option value="">Visibilidad</option><option value="private">Privada</option><option value="shared">Compartida</option></select><button className={buttonClass} disabled={saving} type="submit">Crear objetivo</button></form><Message error={error} /></Panel><Panel title="Movimientos de ahorro"><div className="mt-3 space-y-2">{movements.map((item) => <div className="flex justify-between gap-2 text-sm" key={item.id}><span>{item.kind} · {formatMoney(item.amount)}</span>{item.status === "CONFIRMED" && <span className="flex gap-2"><button className="text-orange-300" onClick={() => correctRecord(item)} type="button">Corregir</button><button className="text-rose-200" onClick={() => voidRecord(item)} type="button">Anular</button></span>}</div>)}</div><form className="mt-4 space-y-3" onSubmit={saveMovement}><select className={fieldClass} onChange={(event) => setMovement({ ...movement, goal_id: event.target.value })} required value={movement.goal_id}><option value="">Objetivo</option>{goals.map((goal) => <option key={goal.id} value={goal.id}>{goal.name}</option>)}</select><select className={fieldClass} onChange={(event) => setMovement({ ...movement, kind: event.target.value })} value={movement.kind}><option value="CONTRIBUTION">Aporte</option><option value="WITHDRAWAL">Retiro</option><option value="ADJUSTMENT">Ajuste</option></select><input className={fieldClass} inputMode="decimal" onChange={(event) => setMovement({ ...movement, amount: event.target.value })} placeholder="Importe" required value={movement.amount} /><input className={fieldClass} onChange={(event) => setMovement({ ...movement, occurred_on: event.target.value })} required type="date" value={movement.occurred_on} /><input className={fieldClass} onChange={(event) => setMovement({ ...movement, description: event.target.value })} placeholder="Descripción" value={movement.description} /><button className={buttonClass} disabled={saving} type="submit">Registrar movimiento</button></form></Panel></>;
+}
+
+function MatiasManager({ fund, movements, memberships, familyId, isAdmin, onChanged }) {
+  const [target, setTarget] = useState(fund?.target_amount || ""); const [movement, setMovement] = useState({ kind: "REPLENISHMENT", amount: "", occurred_on: "", description: "", allocations: [] }); const [error, setError] = useState("");
+  async function saveFund(event) { event.preventDefault(); try { if (fund) await updateMatiasFund(familyId, { target_amount: target.replace(",", "."), projected_balance: fund.projected_balance }); else await createMatiasFund(familyId, { target_amount: target.replace(",", "."), projected_balance: "0.00" }); onChanged(); } catch (requestError) { setError(apiErrorMessage(requestError)); } }
+  async function saveMovement(event) { event.preventDefault(); if (!exactAllocationTotal(movement.amount, movement.allocations)) { setError("Las asignaciones deben sumar exactamente el importe."); return; } try { await createMovement(familyId, "matias-fund-movements", { ...movement, amount: movement.amount.replace(",", "."), allocations: movement.allocations.map((item) => ({ contributor_id: Number(item.contributor_id), amount: item.amount.replace(",", ".") })) }); onChanged(); } catch (requestError) { setError(apiErrorMessage(requestError)); } }
+  return <Panel title="Fondo Matías">{!fund && !isAdmin ? <p className="mt-2 text-sm text-slate-400">El fondo todavía no fue configurado.</p> : <>{fund && <p className="mt-2 text-sm text-slate-300">Saldo real {formatMoney(fund.real_balance)}. Las reposiciones son movimientos del fondo, no un segundo gasto de consumo.</p>}{isAdmin && <form className="mt-4 flex gap-2" onSubmit={saveFund}><input className={fieldClass} inputMode="decimal" onChange={(event) => setTarget(event.target.value)} placeholder="Objetivo" required value={target} /><button className={buttonClass} type="submit">{fund ? "Actualizar" : "Crear"}</button></form>}{fund && <form className="mt-4 space-y-3 border-t border-slate-800 pt-4" onSubmit={saveMovement}><select className={fieldClass} onChange={(event) => setMovement({ ...movement, kind: event.target.value })} value={movement.kind}><option value="INITIAL_CONTRIBUTION">Aporte inicial</option><option value="REPLENISHMENT">Reposición</option><option value="DISBURSEMENT">Desembolso</option></select><input className={fieldClass} inputMode="decimal" onChange={(event) => setMovement({ ...movement, amount: event.target.value })} placeholder="Importe" required value={movement.amount} /><input className={fieldClass} onChange={(event) => setMovement({ ...movement, occurred_on: event.target.value })} required type="date" value={movement.occurred_on} /><input className={fieldClass} onChange={(event) => setMovement({ ...movement, description: event.target.value })} placeholder="Descripción" value={movement.description} /><AllocationFields allocations={movement.allocations} memberships={memberships} onChange={(allocations) => setMovement({ ...movement, allocations })} label="Aportes al fondo" ownerField="contributor_id" /><button className={buttonClass} type="submit">Registrar fondo</button></form>}<Message error={error} /></>}</Panel>;
+}
+
+function BudgetManager({ familyId, memberships, isAdmin }) {
+  const [data, setData] = useState(null); const [error, setError] = useState(""); const [month, setMonth] = useState(""); const [amount, setAmount] = useState(""); const [version, setVersion] = useState("1"); const [lines, setLines] = useState("[]"); const [income, setIncome] = useState(""); const [projection, setProjection] = useState(null);
+  useEffect(() => { if (!isAdmin) return undefined; const controller = new AbortController(); getBudgetData(familyId, controller.signal).then(setData).catch((requestError) => setError(apiErrorMessage(requestError))); return () => controller.abort(); }, [familyId, isAdmin]);
+  async function reload() { setData(await getBudgetData(familyId)); }
+  async function addAllowance(event) { event.preventDefault(); try { await createBudgetRecord(familyId, "free-money-allowances", { owner_id: memberships[0]?.user_id, amount: amount.replace(",", "."), effective_date: `${month}-01` }); await reload(); } catch (requestError) { setError(apiErrorMessage(requestError)); } }
+  async function addBudget(event) { event.preventDefault(); try { await createBudgetRecord(familyId, "budget-forecasts", { month: `${month}-01`, version: Number(version), lines: JSON.parse(lines) }); await reload(); } catch (requestError) { setError(requestError instanceof SyntaxError ? "Las líneas deben ser JSON válido." : apiErrorMessage(requestError)); } }
+  async function addDistribution(event) { event.preventDefault(); const [first, second] = memberships.map((item) => item.user_id); try { await createBudgetRecord(familyId, "savings-distribution-rules", { effective_date: `${month}-01`, first_owner_id: first, second_owner_id: second }); await reload(); } catch (requestError) { setError(apiErrorMessage(requestError)); } }
+  async function calculateProjection(event) { event.preventDefault(); try { setProjection(await createBudgetRecord(familyId, "budgets/projected-savings", { month: `${month}-01`, projected_income: income.replace(",", ".") })); } catch (requestError) { setError(apiErrorMessage(requestError)); } }
+  if (!isAdmin) return <Panel title="Presupuesto"><p className="mt-2 text-sm text-slate-400">La configuración de presupuestos es exclusiva de la administración familiar.</p></Panel>;
+  return <Panel title="Presupuestos y distribución">
+    <p className="mt-2 text-sm text-slate-400">Presupuestos: {data ? data.forecasts.length : "cargando..."} · asignaciones: {data?.allowances.length || 0} · reglas: {data?.rules.length || 0}</p>
+    <label className="mt-4 block text-sm text-slate-300">Mes<input className={fieldClass} onChange={(event) => setMonth(event.target.value)} required type="month" value={month} /></label>
+    <form className="mt-4 space-y-3 border-t border-slate-800 pt-4" onSubmit={addBudget}><p className="text-sm font-medium text-slate-200">Nuevo presupuesto</p><input className={fieldClass} inputMode="numeric" min="1" onChange={(event) => setVersion(event.target.value)} placeholder="Versión" required type="number" value={version} /><textarea className={`${fieldClass} min-h-24 font-mono text-xs`} onChange={(event) => setLines(event.target.value)} value={lines} /><p className="text-xs text-slate-500">Líneas JSON, por ejemplo: <code>{'[{"name":"Alquiler","amount":"900.00","kind":"STANDARD"}]'}</code>. Cigarettes ya está incluida en el presupuesto de 1.324,08 EUR.</p><button className={buttonClass} disabled={!month} type="submit">Crear presupuesto</button></form>
+    <form className="mt-4 space-y-3 border-t border-slate-800 pt-4" onSubmit={addAllowance}><p className="text-sm font-medium text-slate-200">Dinero libre</p><input className={fieldClass} inputMode="decimal" onChange={(event) => setAmount(event.target.value)} placeholder="Asignación de dinero libre" required value={amount} /><button className={buttonClass} disabled={!month} type="submit">Crear asignación</button></form>
+    <form className="mt-4 border-t border-slate-800 pt-4" onSubmit={addDistribution}><p className="text-sm font-medium text-slate-200">Regla de distribución</p><p className="mt-2 text-xs text-slate-500">Usa los dos integrantes activos disponibles para el mes seleccionado.</p><button className={`${buttonClass} mt-3`} disabled={!month || memberships.length < 2} type="submit">Crear regla</button></form>
+    <form className="mt-4 space-y-3 border-t border-slate-800 pt-4" onSubmit={calculateProjection}><p className="text-sm font-medium text-slate-200">Ahorro proyectado</p><input className={fieldClass} inputMode="decimal" onChange={(event) => setIncome(event.target.value)} placeholder="Ingreso proyectado" required value={income} /><button className={buttonClass} disabled={!month} type="submit">Calcular</button></form>
+    {projection && <p className="mt-3 text-sm text-orange-200">Disponible para ahorro: {formatMoney(projection.available_projected_savings)}</p>}<Message error={error} />
+  </Panel>;
+}
+
+export function InitialConfiguration({ familyId, memberships, isAdmin, onSaved }) {
+  const [payload, setPayload] = useState("{\n  \"accounts\": [],\n  \"categories\": [],\n  \"income_forecasts\": [],\n  \"expense_forecasts\": [],\n  \"privacy_impact_confirmed\": false\n}"); const [confirmed, setConfirmed] = useState(false); const [error, setError] = useState(""); const [saving, setSaving] = useState(false);
+  async function submit(event) { event.preventDefault(); if (!confirmed) { setError("Confirmá el impacto de privacidad antes de continuar."); return; } try { const data = JSON.parse(payload); data.privacy_impact_confirmed = true; setSaving(true); setError(""); await configureInitialForecasts(familyId, data); onSaved(); } catch (requestError) { setError(requestError instanceof SyntaxError ? "La configuración no es JSON válido." : apiErrorMessage(requestError)); } finally { setSaving(false); } }
+  if (!isAdmin) return <Panel title="Configuración inicial"><p className="mt-2 text-sm text-slate-400">Solo Jalberth puede establecer el plan inicial.</p></Panel>;
+  return <Panel title="Configuración inicial"><p className="mt-2 text-sm leading-6 text-slate-400">Configurá solamente pronósticos. Debe incluir exactamente Cigarettes: 186,00 EUR compartidos, con dos asignaciones de 93,00 EUR. Integrantes disponibles: {memberships.map((item) => item.username || item.user_id).join(", ")}.</p><form className="mt-4" onSubmit={submit}><textarea className={`${fieldClass} min-h-64 font-mono text-xs`} onChange={(event) => setPayload(event.target.value)} value={payload} /><label className="mt-3 flex gap-3 text-sm text-slate-300"><input checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} required type="checkbox" />Confirmo que los registros compartidos harán visible esa información a los integrantes autorizados.</label><button className={`${buttonClass} mt-4`} disabled={saving} type="submit">{saving ? "Configurando..." : "Guardar configuración inicial"}</button></form><Message error={error} /></Panel>;
+}
+
+export function FinanceCrud({ accounts, categories, data, familyId, isAdmin, memberships, onChanged, sessionUser, showMovements = true, showSavings = true }) {
+  return <div className="space-y-5">{showMovements && <><MovementManager accounts={accounts} categories={categories} familyId={familyId} memberships={memberships} onChanged={onChanged} records={data.incomeMovements} sessionUser={sessionUser} type="income" /><MovementManager accounts={accounts} categories={categories} familyId={familyId} memberships={memberships} onChanged={onChanged} records={data.expenseMovements} sessionUser={sessionUser} type="expense" /></>}{showSavings && <><SavingsManager familyId={familyId} goals={data.savingsGoals} movements={data.savingsMovements} onChanged={onChanged} sessionUser={sessionUser} /><MatiasManager familyId={familyId} fund={data.matiasFund} isAdmin={isAdmin} memberships={memberships} movements={data.matiasFundMovements} onChanged={onChanged} /><BudgetManager familyId={familyId} isAdmin={isAdmin} memberships={memberships} /></>}</div>;
+}

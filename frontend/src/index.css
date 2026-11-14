@@ -2,6 +2,12 @@
 
 @theme {
   --font-sans: "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+  /* Legacy emerald utility names resolve to the product's orange accent. */
+  --color-emerald-200: oklch(90% 0.16 75);
+  --color-emerald-300: oklch(84% 0.17 72);
+  --color-emerald-400: oklch(76% 0.18 62);
+  --color-emerald-900: oklch(28% 0.07 52);
+  --color-emerald-950: oklch(18% 0.04 48);
 }
 
 :root {
@@ -12,7 +18,7 @@
 body {
   margin: 0;
   min-width: 320px;
-  background: #020617;
+  background: #000;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -34,7 +40,7 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid #6ee7b7;
+  outline: 2px solid #fdba74;
   outline-offset: 3px;
 }
 

@@ -50,6 +50,44 @@ export function deleteFamilyRecord(familyId, resource, id) {
   return api.delete(`families/${familyId}/${resource}/${id}/`);
 }
 
+export function createMovement(familyId, resource, payload) {
+  return api.post(`families/${familyId}/${resource}/`, payload).then((response) => response.data);
+}
+
+export function correctMovement(familyId, resource, id, payload) {
+  return api.post(`families/${familyId}/${resource}/${id}/correct/`, payload).then((response) => response.data);
+}
+
+export function voidMovement(familyId, resource, id, reason) {
+  return api.post(`families/${familyId}/${resource}/${id}/void/`, { reason }).then((response) => response.data);
+}
+
+export function updateMatiasFund(familyId, payload) {
+  return api.patch(`families/${familyId}/matias-fund/`, payload).then((response) => response.data);
+}
+
+export function createMatiasFund(familyId, payload) {
+  return api.post(`families/${familyId}/matias-fund/`, payload).then((response) => response.data);
+}
+
+export function configureInitialForecasts(familyId, payload) {
+  return api.put(`families/${familyId}/initial-forecast-configuration/`, payload).then((response) => response.data);
+}
+
+export async function getBudgetData(familyId, signal) {
+  const prefix = `families/${familyId}`;
+  const [forecasts, allowances, rules] = await Promise.all([
+    api.get(`${prefix}/budget-forecasts/`, { signal }),
+    api.get(`${prefix}/free-money-allowances/`, { signal }),
+    api.get(`${prefix}/savings-distribution-rules/`, { signal })
+  ]);
+  return { forecasts: forecasts.data, allowances: allowances.data, rules: rules.data };
+}
+
+export function createBudgetRecord(familyId, resource, payload) {
+  return api.post(`families/${familyId}/${resource}/`, payload).then((response) => response.data);
+}
+
 export function getPaymentObligations(familyId, month, signal) {
   return api.get(`families/${familyId}/payment-obligations/`, { params: { month }, signal }).then((response) => response.data);
 }
@@ -85,6 +123,7 @@ export async function getFamilyData(familyId, startMonth, signal) {
     savingsGoals,
     savingsMovements,
     fund,
+    matiasFundMovements,
     projection
   ] = await Promise.all([
     api.get(`${prefix}/logical-accounts/`, { signal }),
@@ -96,6 +135,7 @@ export async function getFamilyData(familyId, startMonth, signal) {
     api.get(`${prefix}/savings-goals/`, { signal }),
     api.get(`${prefix}/savings-movements/`, { signal }),
     matiasFund,
+    api.get(`${prefix}/matias-fund-movements/`, { signal }).catch((error) => error.response?.status === 404 ? { data: [] } : Promise.reject(error)),
     api.post(`${prefix}/projections/scenario/`, { start_month: startMonth }, { signal })
   ]);
 
@@ -109,6 +149,7 @@ export async function getFamilyData(familyId, startMonth, signal) {
     savingsGoals: savingsGoals.data,
     savingsMovements: savingsMovements.data,
     matiasFund: fund.data,
+    matiasFundMovements: matiasFundMovements.data,
     projection: projection.data
   };
 }
