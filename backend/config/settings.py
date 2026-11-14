@@ -6,8 +6,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "development-only-secret-key")
 DEBUG = os.environ.get("DJANGO_DEBUG", "0") == "1"
+USE_LOCAL_SQLITE = os.environ.get("DJANGO_USE_SQLITE") == "1"
 ALLOWED_HOSTS = (
-    os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",") if not DEBUG else []
+    ["localhost", "127.0.0.1"]
+    if DEBUG or USE_LOCAL_SQLITE
+    else os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",")
 )
 
 INSTALLED_APPS = [
@@ -55,11 +58,11 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 # Production defaults to PostgreSQL. SQLite requires an explicit local-development
 # opt-in, while pytest stays self-contained without a running PostgreSQL instance.
-if "pytest" in sys.modules or os.environ.get("DJANGO_USE_SQLITE") == "1":
+if "pytest" in sys.modules or USE_LOCAL_SQLITE:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
-            "NAME": ":memory:",
+            "NAME": BASE_DIR / "dev.sqlite3",
         }
     }
 else:

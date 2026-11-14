@@ -10,6 +10,7 @@ __pycache__/
 htmlcov/
 backend/.venv/
 backend/test.sqlite3
+backend/dev.sqlite3
 node_modules/
 dist/
 coverage/
