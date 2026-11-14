@@ -1,12 +1,20 @@
-import { useState } from "react";
-
-const moneyFormatter = new Intl.NumberFormat("es-ES", {
-  style: "currency",
-  currency: "EUR"
-});
+import { useEffect, useState } from "react";
+import { getFamilies, getFamilyData, isUnauthenticated } from "./api";
 
 export function formatMoney(amount) {
-  return moneyFormatter.format(amount);
+  if (typeof amount !== "string" && typeof amount !== "number") {
+    return null;
+  }
+
+  const value = String(amount);
+  if (!/^-?\d+(\.\d{1,2})?$/.test(value)) {
+    return null;
+  }
+
+  const negative = value.startsWith("-");
+  const [integer, decimal = ""] = (negative ? value.slice(1) : value).split(".");
+  const groupedInteger = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return `${negative ? "-" : ""}${groupedInteger},${decimal.padEnd(2, "0")} €`;
 }
 
 const tabs = ["Resumen", "Detalle", "Proyección"];
@@ -28,12 +36,7 @@ function Icon({ name }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
 
-function EmptyState({ section, tab }) {
-  const message = tab === "Proyección"
-    ? "Configurá los forecasts para consultar proyecciones."
-    : section === "Ahorros"
-      ? "Conectá datos o configurá objetivos de ahorro."
-      : "Conectá datos o configurá los forecasts iniciales.";
+function EmptyState({ children }) {
 
   return (
     <section className="rounded-[2rem] border border-slate-800 bg-slate-900/70 p-6 shadow-2xl shadow-slate-950/30">
@@ -41,16 +44,96 @@ function EmptyState({ section, tab }) {
         <svg viewBox="0 0 24 24" className="h-6 w-6" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M12 3v18M3 12h18" strokeLinecap="round" /></svg>
       </div>
       <h2 className="text-lg font-semibold text-white">Todavía no hay información para mostrar</h2>
-      <p className="mt-2 max-w-sm text-sm leading-6 text-slate-400">{message}</p>
-      <p className="mt-5 text-xs font-medium uppercase tracking-[0.16em] text-slate-500">Importes confirmados</p>
-      <p className="mt-1 text-sm text-slate-400">Sin datos conectados</p>
+      <p className="mt-2 max-w-sm text-sm leading-6 text-slate-400">{children}</p>
     </section>
   );
+}
+
+function Records({ title, items, children }) {
+  return (
+    <section className="rounded-[2rem] border border-slate-800 bg-slate-900/70 p-5 shadow-2xl shadow-slate-950/20">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-base font-semibold text-white">{title}</h2>
+        <span className="text-xs font-medium text-slate-500">{items.length}</span>
+      </div>
+      {items.length ? <div className="mt-4 divide-y divide-slate-800">{children}</div> : <p className="mt-3 text-sm text-slate-400">Aún no se configuró información.</p>}
+    </section>
+  );
+}
+
+function MoneyRecord({ record, subtitle, amount = record.amount }) {
+  return (
+    <article className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-slate-200">{record.description || "Sin descripción"}</p>
+        {subtitle && <p className="mt-1 text-xs text-slate-500">{subtitle}</p>}
+      </div>
+      {amount !== undefined && <p className="shrink-0 text-sm font-semibold text-white">{formatMoney(amount)}</p>}
+    </article>
+  );
+}
+
+function firstDayOfCurrentMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
 export function App() {
   const [activeTab, setActiveTab] = useState("Resumen");
   const [activeSection, setActiveSection] = useState("Inicio");
+  const [families, setFamilies] = useState([]);
+  const [familyId, setFamilyId] = useState("");
+  const [data, setData] = useState(null);
+  const [state, setState] = useState("loading");
+
+  function loadFamilies() {
+    const controller = new AbortController();
+    setState("loading");
+    getFamilies(controller.signal)
+      .then((response) => {
+        setFamilies(response);
+        setFamilyId((current) => current || String(response[0]?.id || ""));
+        setState(response.length ? "ready" : "empty");
+      })
+      .catch((error) => {
+        if (error.code !== "ERR_CANCELED") {
+          setState(isUnauthenticated(error) ? "unauthenticated" : "error");
+        }
+      });
+    return () => controller.abort();
+  }
+
+  function retry() {
+    setData(null);
+    setFamilyId("");
+    loadFamilies();
+  }
+
+  useEffect(() => loadFamilies(), []);
+
+  useEffect(() => {
+    if (!familyId) {
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setData(null);
+    setState("loading");
+    getFamilyData(familyId, firstDayOfCurrentMonth(), controller.signal)
+      .then((response) => {
+        setData(response);
+        setState("ready");
+      })
+      .catch((error) => {
+        if (error.code !== "ERR_CANCELED") {
+          setState(isUnauthenticated(error) ? "unauthenticated" : "error");
+        }
+      });
+    return () => controller.abort();
+  }, [familyId]);
+
+  const selectedFamily = families.find((family) => String(family.id) === familyId);
+  const showProjection = activeTab === "Proyección";
 
   return (
     <main className="min-h-dvh bg-slate-950 text-slate-100">
@@ -58,21 +141,12 @@ export function App() {
         <header className="flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">Mosquera Finance</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">{activeSection}</h1>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">{selectedFamily?.name || activeSection}</h1>
           </div>
-          <div className="flex h-11 w-11 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-sm font-semibold text-slate-300" aria-label="Perfil sin conectar">MF</div>
+          <div className="flex h-11 w-11 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-sm font-semibold text-slate-300" aria-label="Sesión protegida">MF</div>
         </header>
 
-        <section className="mt-8 overflow-hidden rounded-[2rem] border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-6">
-          <p className="text-sm text-slate-400">Visión familiar</p>
-          <div className="mt-3 flex items-end justify-between gap-4">
-            <div>
-              <p className="text-2xl font-semibold tracking-tight text-white">Aún sin saldo confirmado</p>
-              <p className="mt-2 text-sm leading-5 text-slate-400">Los movimientos aparecerán al conectar datos seguros.</p>
-            </div>
-            <span className="mb-1 h-2.5 w-2.5 shrink-0 rounded-full bg-amber-300" title="Pendiente de configuración" />
-          </div>
-        </section>
+        {families.length > 1 && <label className="mt-6 block text-sm text-slate-400">Familia<select value={familyId} onChange={(event) => setFamilyId(event.target.value)} className="mt-2 block w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-3 text-sm font-medium text-white">{families.map((family) => <option key={family.id} value={family.id}>{family.name}</option>)}</select></label>}
 
         <div className="mt-8 flex rounded-2xl bg-slate-900 p-1" role="tablist" aria-label="Vista financiera">
           {tabs.map((tab) => (
@@ -90,17 +164,23 @@ export function App() {
         </div>
 
         <div className="mt-6">
-          <EmptyState section={activeSection} tab={activeTab} />
-          <section className="mt-5 rounded-[2rem] border border-slate-900 bg-slate-900/40 p-5" aria-label="Estado de carga">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-slate-300">Estado de conexión</p>
-              <span className="text-xs font-medium text-slate-500">Esperando datos</span>
-            </div>
-            <div className="mt-4 space-y-3" aria-hidden="true">
-              <div className="h-3 w-2/5 animate-pulse rounded-full bg-slate-800" />
-              <div className="h-3 w-full animate-pulse rounded-full bg-slate-800" />
-            </div>
-          </section>
+          {state === "loading" && <section className="rounded-[2rem] border border-slate-900 bg-slate-900/40 p-5" aria-label="Cargando datos"><p className="text-sm font-medium text-slate-300">Cargando información protegida</p><div className="mt-4 space-y-3" aria-hidden="true"><div className="h-3 w-2/5 animate-pulse rounded-full bg-slate-800" /><div className="h-3 w-full animate-pulse rounded-full bg-slate-800" /></div></section>}
+          {state === "unauthenticated" && <EmptyState>Tu sesión no está disponible. Iniciá sesión para consultar la información autorizada.</EmptyState>}
+          {state === "error" && <section className="rounded-[2rem] border border-rose-900/60 bg-rose-950/30 p-6"><h2 className="text-lg font-semibold text-white">No se pudo cargar la información</h2><p className="mt-2 text-sm leading-6 text-slate-400">Verificá la conexión e intentá nuevamente.</p><button type="button" onClick={retry} className="mt-5 rounded-xl bg-rose-300 px-4 py-2 text-sm font-semibold text-slate-950">Reintentar</button></section>}
+          {state === "empty" && <EmptyState>No tenés una familia autorizada para consultar.</EmptyState>}
+          {state === "ready" && data && <div className="space-y-5">
+            {showProjection ? <Records title="Proyección" items={data.projection.months}>{data.projection.months.map((month) => <MoneyRecord key={month.month} record={{ description: month.month }} subtitle={`Ingresos ${formatMoney(month.income)} · Gastos ${formatMoney(month.expenses)} · Ahorro ${formatMoney(month.savings_contribution)}`} amount={month.net_after_savings} />)}</Records> : <>
+              <Records title="Cuentas" items={data.accounts}>{data.accounts.map((account) => <MoneyRecord key={account.id} record={{ description: account.name }} />)}</Records>
+              <Records title="Categorías" items={data.categories}>{data.categories.map((category) => <MoneyRecord key={category.id} record={{ description: category.name }} subtitle={category.kind} />)}</Records>
+              <Records title="Ingresos configurados" items={data.incomeForecasts}>{data.incomeForecasts.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.recurrence} />)}</Records>
+              <Records title="Ingresos confirmados" items={data.incomeMovements}>{data.incomeMovements.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.occurred_on} />)}</Records>
+              <Records title="Gastos configurados" items={data.expenseForecasts}>{data.expenseForecasts.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.recurrence} />)}</Records>
+              <Records title="Gastos confirmados" items={data.expenseMovements}>{data.expenseMovements.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.occurred_on} />)}</Records>
+              <Records title="Objetivos de ahorro" items={data.savingsGoals}>{data.savingsGoals.map((goal) => <MoneyRecord key={goal.id} record={{ description: goal.name }} subtitle={`Saldo real ${formatMoney(goal.real_balance)} · Objetivo ${formatMoney(goal.target_amount)}`} amount={goal.projected_balance} />)}</Records>
+              <Records title="Movimientos de ahorro" items={data.savingsMovements}>{data.savingsMovements.map((record) => <MoneyRecord key={record.id} record={record} subtitle={record.occurred_on} />)}</Records>
+              {data.matiasFund && <Records title="Fondo Matías" items={[data.matiasFund]}><MoneyRecord record={{ description: "Saldo real" }} subtitle={`Objetivo ${formatMoney(data.matiasFund.target_amount)}`} amount={data.matiasFund.real_balance} /></Records>}
+            </>}
+          </div>}
         </div>
       </div>
 
