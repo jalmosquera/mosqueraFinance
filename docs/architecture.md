@@ -2,7 +2,7 @@
 
 ## Implementation Status
 
-The first backend increment provides the custom user model, family memberships, authenticated family endpoints, server-enforced family scoping, and immutable audit logs. Financial records, budgets, savings, projections, frontend, and deployment infrastructure remain pending.
+The backend provides the custom user model, family memberships, authenticated family endpoints, server-enforced family scoping, immutable audit logs, and private/shared logical accounts and categories. Financial movements, budgets, savings, projections, frontend, and deployment infrastructure remain pending.
 
 ## System
 

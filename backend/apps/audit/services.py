@@ -5,10 +5,8 @@ from django.core.exceptions import ValidationError
 from .models import AuditLog
 
 
-def record_membership_mutation(
-    *, actor, action, family, membership_target_id, metadata
-):
-    """Create an immutable audit record for a membership change.
+def record_entity_mutation(*, actor, action, family, entity_type, entity_id, metadata):
+    """Create an immutable audit record for a server-side entity mutation.
 
     The actor is accepted only from trusted server-side services, never serializers.
     """
@@ -21,6 +19,20 @@ def record_membership_mutation(
         actor=actor,
         action=action,
         family=family,
-        membership_target_id=membership_target_id,
+        membership_target_id=entity_id if entity_type == "membership" else None,
+        entity_type=entity_type,
+        entity_id=entity_id,
         metadata=metadata_copy,
+    )
+
+
+def record_membership_mutation(*, actor, action, family, membership_target_id, metadata):
+    """Compatibility wrapper for membership audit events."""
+    return record_entity_mutation(
+        actor=actor,
+        action=action,
+        family=family,
+        entity_type="membership",
+        entity_id=membership_target_id,
+        metadata=metadata,
     )
