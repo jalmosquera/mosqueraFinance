@@ -98,6 +98,11 @@ class ExpenseMovementSerializer(ExpenseRecordSerializer):
         attrs = super().validate(attrs)
         owner = attrs.get("owner")
         allocations = attrs.get("allocations", [])
+        member_ids = [allocation["member"].pk for allocation in allocations]
+        if len(member_ids) != len(set(member_ids)):
+            raise serializers.ValidationError(
+                {"allocations": "Each member can have only one allocation."}
+            )
         if owner is not None and allocations:
             raise serializers.ValidationError({"allocations": "Private expenses cannot have allocations."})
         if owner is None:
