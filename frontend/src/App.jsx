@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { bootstrapSession, getFamilies, getFamilyData, getMemberships, isForbidden, isUnauthenticated, login, logout } from "./api";
 import { createExportImage, downloadImage } from "./exportImage";
 import { createExportPayload } from "./exportPayload";
-import { formatDate, formatMonth } from "./formatDate";
+import { formatDate } from "./formatDate";
 import { formatMoney } from "./formatMoney";
+import { Projection } from "./Projection";
 import { Settings } from "./Settings";
 
 export { formatMoney };
@@ -306,7 +307,7 @@ export function App() {
   }
 
   const selectedFamily = families.find((family) => String(family.id) === familyId);
-  const showProjection = activeTab === "Proyección";
+  const showProjection = activeSection === "Inicio" && activeTab === "Proyección";
   const visibleData = loadedFamilyId === familyId ? data : null;
   const currentMembership = memberships.find((membership) => membership.user_id === session.user?.id && membership.is_active);
   const isAdmin = currentMembership?.role === "ADMIN";
@@ -327,15 +328,15 @@ export function App() {
   }
 
   return (
-    <main className="min-h-dvh bg-slate-950 text-slate-100">
-      <div className="mx-auto flex min-h-dvh max-w-md flex-col px-5 pb-28 pt-[max(1.5rem,env(safe-area-inset-top))]">
-        <header className="flex items-center justify-between">
+    <main className={`min-h-dvh text-slate-100 ${showProjection ? "bg-black" : "bg-slate-950"}`}>
+      <div className={`mx-auto flex min-h-dvh w-full flex-col px-5 pb-28 pt-[max(1.5rem,env(safe-area-inset-top))] ${showProjection && activeSection === "Inicio" ? "max-w-6xl projection-shell" : "max-w-md"}`}>
+        {!showProjection && <header className="flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">Mosquera Finance</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">{selectedFamily?.name || activeSection}</h1>
           </div>
           <button className="flex h-11 min-w-11 items-center justify-center rounded-full border border-slate-800 bg-slate-900 px-2 text-sm font-semibold text-slate-300" onClick={signOut} type="button" aria-label="Cerrar sesión">{session.user.username.slice(0, 2).toUpperCase()}</button>
-        </header>
+        </header>}
 
         {families.length > 1 && activeSection !== "Ajustes" && <label className="mt-6 block text-sm text-slate-400">Familia<select value={familyId} onChange={(event) => setFamilyId(event.target.value)} className="mt-2 block w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-3 text-sm font-medium text-white">{families.map((family) => <option key={family.id} value={family.id}>{family.name}</option>)}</select></label>}
 
@@ -362,7 +363,7 @@ export function App() {
           {activeSection !== "Ajustes" && state === "empty" && <EmptyState>No tenés una familia autorizada para consultar.</EmptyState>}
           {activeSection !== "Ajustes" && shouldShowOnboarding && <FirstRunOnboarding isAdmin={isAdmin} onConfigure={openInitialConfiguration} reviewed={initialConfigurationReviewed} setReviewed={setInitialConfigurationReviewed} />}
           {activeSection !== "Ajustes" && state === "ready" && visibleData && !shouldShowOnboarding && <div className="space-y-5">
-            {showProjection ? <Records title="Proyección" items={visibleData.projection.months}>{visibleData.projection.months.map((month) => <MoneyRecord key={month.month} record={{ description: formatMonth(month.month) }} subtitle={`Ingresos ${formatMoney(month.income)} · Gastos ${formatMoney(month.expenses)} · Ahorro ${formatMoney(month.savings_contribution)}`} amount={month.net_after_savings} />)}</Records> : <>
+            {showProjection ? <Projection activeSection={activeSection} familyName={selectedFamily?.name || "Familia"} onSectionChange={setActiveSection} projection={visibleData.projection} savingsGoals={visibleData.savingsGoals} username={session.user.username} /> : <>
               <ExportCards data={visibleData} familyName={selectedFamily?.name || "Familia"} sessionUser={session.user} />
               <Records title="Cuentas" items={visibleData.accounts}>{visibleData.accounts.map((account) => <MoneyRecord key={account.id} record={{ description: account.name }} />)}</Records>
               <Records title="Categorías" items={visibleData.categories}>{visibleData.categories.map((category) => <MoneyRecord key={category.id} record={{ description: category.name }} subtitle={category.kind} />)}</Records>
@@ -378,7 +379,7 @@ export function App() {
         </div>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-800 bg-slate-950/95 pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-3 backdrop-blur" aria-label="Navegación principal">
+      {!showProjection && <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-800 bg-slate-950/95 pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-3 backdrop-blur" aria-label="Navegación principal">
         <div className="mx-auto grid max-w-md grid-cols-4 gap-1">
           {navigation.map((item) => (
             <button key={item.label} type="button" onClick={() => setActiveSection(item.label)} aria-current={activeSection === item.label ? "page" : undefined} className={`flex flex-col items-center gap-1 rounded-xl py-1.5 text-[11px] font-medium transition motion-reduce:transition-none ${activeSection === item.label ? "text-emerald-300" : "text-slate-500"}`}>
@@ -387,7 +388,7 @@ export function App() {
             </button>
           ))}
         </div>
-      </nav>
+      </nav>}
     </main>
   );
 }
