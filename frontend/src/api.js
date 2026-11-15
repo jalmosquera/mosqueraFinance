@@ -18,7 +18,16 @@ export async function bootstrapSession(signal) {
 }
 
 export async function login(username, password) {
-  const response = await api.post("auth/login/", { username, password });
+  await api.get("auth/csrf/");
+  const csrfToken = document.cookie
+    .split("; ")
+    .find((cookie) => cookie.startsWith("csrftoken="))
+    ?.split("=")[1];
+  const response = await api.post(
+    "auth/login/",
+    { username, password },
+    { headers: csrfToken ? { "X-CSRFToken": csrfToken } : {} }
+  );
   return response.data.user;
 }
 
