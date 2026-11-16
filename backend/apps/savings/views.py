@@ -33,6 +33,11 @@ from .services import (
 )
 
 
+def _require_household_aggregate_authority(*, user, family):
+    if not FamilyMembership.objects.household_aggregate_authority_for(user, family).exists():
+        raise PermissionDenied("Only the household aggregate authority can manage shared financial configuration.")
+
+
 class FamilyScopedViewSet(viewsets.ModelViewSet):
     permission_classes = (IsAuthenticated,)
 
@@ -53,7 +58,10 @@ class SavingsGoalViewSet(FamilyScopedViewSet):
 
     @transaction.atomic
     def perform_create(self, serializer):
-        goal = serializer.save(family=self.get_family())
+        family = self.get_family()
+        if serializer.validated_data.get("owner") is None:
+            _require_household_aggregate_authority(user=self.request.user, family=family)
+        goal = serializer.save()
         record_entity_mutation(
             actor=self.request.user,
             action="savings_goal.created",
@@ -65,6 +73,11 @@ class SavingsGoalViewSet(FamilyScopedViewSet):
 
     @transaction.atomic
     def perform_update(self, serializer):
+        if serializer.instance.owner_id is None:
+            _require_household_aggregate_authority(
+                user=self.request.user,
+                family=serializer.instance.family,
+            )
         goal = serializer.save()
         record_entity_mutation(
             actor=self.request.user,
@@ -148,8 +161,7 @@ class MatiasFundView(RetrieveUpdateAPIView):
         return get_object_or_404(MatiasFund, family=self.get_family())
 
     def _require_admin(self):
-        if not FamilyMembership.objects.active_admin_for(self.request.user, self.get_family()).exists():
-            raise PermissionDenied("Only family administrators can configure the Matias fund.")
+        _require_household_aggregate_authority(user=self.request.user, family=self.get_family())
 
     def update(self, request, *args, **kwargs):
         self._require_admin()
@@ -183,8 +195,12 @@ class MatiasFundMovementViewSet(FamilyScopedViewSet):
     def get_queryset(self):
         return MatiasFundMovement.objects.filter(fund=self.get_fund()).prefetch_related("allocations")
 
+    def _require_household_aggregate_authority(self):
+        _require_household_aggregate_authority(user=self.request.user, family=self.get_family())
+
     @transaction.atomic
     def perform_create(self, serializer):
+        self._require_household_aggregate_authority()
         allocations = serializer.validated_data.pop("allocations")
         serializer.instance = create_matias_fund_movement(
             actor=self.request.user,
@@ -195,6 +211,7 @@ class MatiasFundMovementViewSet(FamilyScopedViewSet):
 
     @action(detail=True, methods=["post"])
     def void(self, request, *args, **kwargs):
+        self._require_household_aggregate_authority()
         serializer = VoidSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -205,6 +222,7 @@ class MatiasFundMovementViewSet(FamilyScopedViewSet):
 
     @action(detail=True, methods=["post"])
     def correct(self, request, *args, **kwargs):
+        self._require_household_aggregate_authority()
         serializer = MatiasFundCorrectionSerializer(data=request.data, context=self.get_serializer_context())
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data.copy()

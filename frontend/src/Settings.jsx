@@ -17,12 +17,12 @@ import { formatDate } from "./formatDate";
 import { browserPermission, clearLocalReminder, preferencePermission, requestBrowserPermission, scheduleLocalReminder } from "./notifications";
 import { FinanceCrud, InitialConfiguration } from "./FinanceCrud";
 
-const fieldClass = "mt-2 block w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-base text-white outline-none transition motion-reduce:transition-none focus:border-emerald-300";
-const secondaryButtonClass = "min-h-11 rounded-xl border border-slate-700 px-3 py-2 text-sm font-semibold text-slate-200 disabled:cursor-not-allowed disabled:opacity-50";
+const fieldClass = "mf-input";
+const secondaryButtonClass = "mf-button mf-button--secondary";
 
 function Message({ error, success }) {
-  if (error) return <p aria-live="assertive" className="mt-4 rounded-xl border border-rose-900/60 bg-rose-950/30 px-3 py-2 text-sm text-rose-200" role="alert">{error}</p>;
-  if (success) return <p aria-live="polite" className="mt-4 rounded-xl border border-emerald-900/60 bg-emerald-950/30 px-3 py-2 text-sm text-emerald-200" role="status">{success}</p>;
+  if (error) return <p aria-live="assertive" className="mf-message mf-message--error" role="alert">{error}</p>;
+  if (success) return <p aria-live="polite" className="mf-message mf-message--success" role="status">{success}</p>;
   return null;
 }
 
@@ -37,7 +37,7 @@ function OwnerField({ value, onChange, disabled = false }) {
 }
 
 function Panel({ title, children }) {
-  return <section className="rounded-[2rem] border border-slate-800 bg-slate-900/70 p-5 shadow-2xl shadow-slate-950/20"><h2 className="text-lg font-semibold text-white">{title}</h2>{children}</section>;
+  return <section className="mf-card mf-panel"><h2>{title}</h2>{children}</section>;
 }
 
 function NotificationPreferences({ familyId }) {
@@ -230,8 +230,8 @@ function Obligations({ familyId, memberships }) {
   </Panel>;
 }
 
-export function Settings({ accounts, categories, data, familyId, families, incomeForecasts, expenseForecasts, isAdmin, onChanged, onFamilyChange, onLogout, sessionUser }) {
-  const [panel, setPanel] = useState("profile");
+export function Settings({ accounts, categories, data, expenseCreationRequest, familyId, families, incomeCreationRequest, incomeForecasts, expenseForecasts, initialPanel = "profile", isAdmin, onChanged, onFamilyChange, onLogout, sessionUser }) {
+  const [panel, setPanel] = useState(initialPanel);
   const [memberships, setMemberships] = useState([]);
   useEffect(() => {
     if (!familyId) return undefined;
@@ -239,16 +239,17 @@ export function Settings({ accounts, categories, data, familyId, families, incom
     getMemberships(familyId, controller.signal).then(setMemberships).catch(() => setMemberships([]));
     return () => controller.abort();
   }, [familyId]);
+  useEffect(() => { setPanel(initialPanel); }, [initialPanel]);
   const panels = [{ id: "profile", label: "Perfil" }, { id: "notifications", label: "Avisos" }, { id: "categories", label: "Categorías" }, { id: "accounts", label: "Cuentas" }, { id: "forecasts", label: "Pronósticos" }, { id: "movements", label: "Reales" }, { id: "savings", label: "Ahorros" }, { id: "setup", label: "Inicial" }, { id: "obligations", label: "Obligaciones" }];
-  return <div className="mt-8 space-y-5">
-    <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Ajustes">{panels.map((item) => <button aria-pressed={panel === item.id} className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${panel === item.id ? "bg-emerald-300 text-slate-950" : "bg-slate-900 text-slate-400"}`} key={item.id} onClick={() => setPanel(item.id)} type="button">{item.label}</button>)}</div>
+  return <div className="mf-settings">
+    <div className="mf-chip-list" aria-label="Ajustes">{panels.map((item) => <button aria-pressed={panel === item.id} className={panel === item.id ? "is-active" : ""} key={item.id} onClick={() => setPanel(item.id)} type="button">{item.label}</button>)}</div>
     <div>
     {panel === "profile" && <Panel title="Perfil y familia"><dl className="mt-4 space-y-3 text-sm"><div><dt className="text-slate-500">Usuario</dt><dd className="mt-1 font-medium text-slate-100">{sessionUser.username}</dd></div>{sessionUser.email && <div><dt className="text-slate-500">Correo</dt><dd className="mt-1 font-medium text-slate-100">{sessionUser.email}</dd></div>}</dl>{families.length > 1 && <label className="mt-5 block text-sm font-medium text-slate-300">Familia activa<select className={fieldClass} onChange={(event) => onFamilyChange(event.target.value)} value={familyId}>{families.map((family) => <option key={family.id} value={family.id}>{family.name}</option>)}</select></label>}<button className="mt-6 w-full rounded-xl border border-rose-900/70 px-4 py-3 text-sm font-semibold text-rose-200" onClick={onLogout} type="button">Cerrar sesión</button></Panel>}
     {panel === "notifications" && <NotificationPreferences familyId={familyId} />}
     {panel === "categories" && <NamedRecordsManager category familyId={familyId} onChanged={onChanged} records={categories} resource="categories" sessionUser={sessionUser} title="Categorías" />}
     {panel === "accounts" && <NamedRecordsManager familyId={familyId} onChanged={onChanged} records={accounts} resource="logical-accounts" sessionUser={sessionUser} title="Cuentas lógicas" />}
     {panel === "forecasts" && <><ForecastManager accounts={accounts} categories={categories} familyId={familyId} onChanged={onChanged} records={incomeForecasts} sessionUser={sessionUser} type="income" /><div className="h-5" /><ForecastManager accounts={accounts} categories={categories} familyId={familyId} onChanged={onChanged} records={expenseForecasts} sessionUser={sessionUser} type="expense" /></>}
-    {panel === "movements" && data && <FinanceCrud accounts={accounts} categories={categories} data={data} familyId={familyId} isAdmin={isAdmin} memberships={memberships} onChanged={onChanged} sessionUser={sessionUser} showSavings={false} />}
+    {panel === "movements" && data && <FinanceCrud accounts={accounts} categories={categories} data={data} expenseCreationRequest={expenseCreationRequest} familyId={familyId} incomeCreationRequest={incomeCreationRequest} isAdmin={isAdmin} memberships={memberships} onChanged={onChanged} sessionUser={sessionUser} showSavings={false} />}
     {panel === "savings" && data && <FinanceCrud accounts={accounts} categories={categories} data={data} familyId={familyId} isAdmin={isAdmin} memberships={memberships} onChanged={onChanged} sessionUser={sessionUser} showMovements={false} />}
     {panel === "setup" && <InitialConfiguration familyId={familyId} isAdmin={isAdmin} memberships={memberships} onSaved={onChanged} />}
     {panel === "obligations" && <Obligations familyId={familyId} memberships={memberships} />}

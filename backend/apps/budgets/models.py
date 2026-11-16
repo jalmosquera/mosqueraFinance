@@ -172,7 +172,7 @@ class SavingsDistributionRule(models.Model):
 
     FIRST_OWNER_PERCENTAGE = Decimal("0.25")
     SECOND_OWNER_PERCENTAGE = Decimal("0.25")
-    MATIAS_PERCENTAGE = Decimal("0.50")
+    FAMILY_PERCENTAGE = Decimal("0.50")
 
     class Meta:
         ordering = ("-effective_date", "-pk")

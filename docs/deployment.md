@@ -72,3 +72,39 @@ docker compose start backend
 ```
 
 The scripts intentionally operate only on the `db` service of the current Compose project. Verify the selected `.env`, Compose project, and dump file before restoring.
+
+## Approved Forecast Configuration
+
+The Projection view is read-only. It never creates real financial movements and
+only renders an approved forecast when an administrator has configured all of
+the following in PostgreSQL:
+
+- recurring income forecasts for the applicable month;
+- one budget forecast for each of the next 12 months, including Cigarettes only
+  once in the shared budget;
+- effective personal free-money allowances;
+- an effective 25/25/50 savings distribution rule;
+- personal and shared savings goals; and
+- the Matias fund plan: target, initial planned contribution, monthly simulated
+  expenditure, and monthly replenishment.
+
+The endpoint reports the missing months instead of inventing a forecast. Planning
+values are forecasts and must not be entered as confirmed income, expense,
+savings, or Matias movements. Confirmed balances and their progress bars change
+only through audited confirmed movements.
+
+## Hosted Target Status
+
+The intended hosted architecture is Vercel for the Vite frontend and Railway for
+Django plus Railway PostgreSQL. Keep the browser API path relative (`/api/v1/`)
+and configure a Vercel HTTPS rewrite to the Railway backend so session and CSRF
+cookies remain first-party. Do not use a direct cross-origin API call or relax
+CSRF/CORS settings merely to make authentication work.
+
+As of November 2026, Vercel Hobby is free within its published limits. Railway
+Free includes only USD 1 of monthly usage and has a 500 MB volume limit; a
+continuously running Django service plus PostgreSQL is not guaranteed to remain
+within that allowance. Confirm Railway billing eligibility and usage before
+enabling production traffic. The currently created Railway backend requires a
+separate approved redeploy to bind Gunicorn to Railway's injected `PORT` and set
+the `/healthz` health-check path.

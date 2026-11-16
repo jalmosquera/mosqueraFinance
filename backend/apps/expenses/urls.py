@@ -1,6 +1,7 @@
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
-from .views import ExpenseForecastViewSet, ExpenseMovementViewSet
+from .views import ExpenseDashboardView, ExpenseForecastViewSet, ExpenseMovementViewSet
 
 router = DefaultRouter()
 router.register(
@@ -14,4 +15,10 @@ router.register(
     basename="expense-movement",
 )
 
-urlpatterns = router.urls
+urlpatterns = [
+    path(
+        "families/<int:family_pk>/expenses/dashboard/",
+        ExpenseDashboardView.as_view(),
+        name="expense-dashboard",
+    ),
+] + router.urls

@@ -53,7 +53,7 @@ def distribution_for_month(*, family, month, available_savings):
         "first_owner_amount": first,
         "second_owner_id": rule.second_owner_id,
         "second_owner_amount": second,
-        "matias_amount": _money(available_savings - first - second),
+        "family_amount": _money(available_savings - first - second),
     }
 
 

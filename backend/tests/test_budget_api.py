@@ -90,12 +90,12 @@ def test_first_and_subsequent_month_scenarios_use_decimal_distribution_without_r
         "first_owner_amount": Decimal("216.48"),
         "second_owner_id": data["raiza"].pk,
         "second_owner_amount": Decimal("216.48"),
-        "matias_amount": Decimal("432.96"),
+        "family_amount": Decimal("432.96"),
     }
     assert subsequent["available_projected_savings"] == Decimal("935.92")
     assert subsequent["distribution"]["first_owner_amount"] == Decimal("233.98")
     assert subsequent["distribution"]["second_owner_amount"] == Decimal("233.98")
-    assert subsequent["distribution"]["matias_amount"] == Decimal("467.96")
+    assert subsequent["distribution"]["family_amount"] == Decimal("467.96")
     assert goal.real_balance == real_balance_before == Decimal("0.00")
     assert SavingsMovement.objects.count() == 0
 

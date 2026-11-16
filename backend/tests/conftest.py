@@ -35,11 +35,15 @@ def membership_factory(db):
     def create_membership(
         family, user, role=FamilyMembership.Role.MEMBER, is_active=True
     ):
-        return FamilyMembership.objects.create(
+        membership = FamilyMembership.objects.create(
             family=family,
             user=user,
             role=role,
             is_active=is_active,
         )
+        if role == FamilyMembership.Role.ADMIN and family.household_aggregate_authority_id is None:
+            family.household_aggregate_authority = user
+            family.save(update_fields=("household_aggregate_authority",))
+        return membership
 
     return create_membership

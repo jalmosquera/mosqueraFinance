@@ -82,10 +82,22 @@ class SavingsCorrectionSerializer(VoidSerializer):
 
 class MatiasFundSerializer(serializers.ModelSerializer):
     real_balance = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    initial_contribution_total = serializers.DecimalField(
+        max_digits=14, decimal_places=2, min_value=Decimal("0.00"), required=False
+    )
+    monthly_simulated_expenditure = serializers.DecimalField(
+        max_digits=14, decimal_places=2, min_value=Decimal("0.00"), required=False
+    )
+    monthly_replenishment_total = serializers.DecimalField(
+        max_digits=14, decimal_places=2, min_value=Decimal("0.00"), required=False
+    )
 
     class Meta:
         model = MatiasFund
-        fields = ("id", "family_id", "target_amount", "projected_balance", "real_balance", "created_at", "updated_at")
+        fields = (
+            "id", "family_id", "target_amount", "projected_balance", "initial_contribution_total",
+            "monthly_simulated_expenditure", "monthly_replenishment_total", "real_balance", "created_at", "updated_at",
+        )
         read_only_fields = ("id", "family_id", "real_balance", "created_at", "updated_at")
 
 
@@ -119,6 +131,18 @@ class MatiasFundMovementSerializer(serializers.ModelSerializer):
         if not allocations or total != attrs["amount"]:
             raise serializers.ValidationError({"allocations": "Allocation amounts must equal the fund movement amount exactly."})
         return attrs
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        request = self.context.get("request")
+        family = self.context.get("family")
+        if request and family and family.household_aggregate_authority_id != request.user.pk:
+            representation["allocations"] = [
+                allocation
+                for allocation in representation["allocations"]
+                if allocation["contributor_id"] == request.user.pk
+            ]
+        return representation
 
 
 class MatiasFundCorrectionSerializer(VoidSerializer):

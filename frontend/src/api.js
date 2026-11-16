@@ -101,6 +101,10 @@ export function getPaymentObligations(familyId, month, signal) {
   return api.get(`families/${familyId}/payment-obligations/`, { params: { month }, signal }).then((response) => response.data);
 }
 
+export function getExpenseDashboard(familyId, month, signal) {
+  return api.get(`families/${familyId}/expenses/dashboard/`, { params: { month: `${month}-01` }, signal }).then((response) => response.data);
+}
+
 export function generatePaymentObligations(familyId, month) {
   return api.post(`families/${familyId}/payment-obligations/generate/`, { month }).then((response) => response.data);
 }
@@ -113,7 +117,14 @@ export function voidPaymentObligation(familyId, obligationId, reason) {
   return api.post(`families/${familyId}/payment-obligations/${obligationId}/void/`, { reason }).then((response) => response.data);
 }
 
-export async function getFamilyData(familyId, startMonth, signal) {
+export function getApprovedForecast(familyId, startMonth, signal) {
+  return api.get(`families/${familyId}/projections/approved-forecast/`, {
+    params: { start_month: startMonth },
+    signal
+  }).then((response) => response.data);
+}
+
+export async function getFamilyData(familyId, signal) {
   const prefix = `families/${familyId}`;
   const matiasFund = api.get(`${prefix}/matias-fund/`, { signal }).catch((error) => {
     if (error.response?.status === 404) {
@@ -132,8 +143,7 @@ export async function getFamilyData(familyId, startMonth, signal) {
     savingsGoals,
     savingsMovements,
     fund,
-    matiasFundMovements,
-    projection
+    matiasFundMovements
   ] = await Promise.all([
     api.get(`${prefix}/logical-accounts/`, { signal }),
     api.get(`${prefix}/categories/`, { signal }),
@@ -144,8 +154,7 @@ export async function getFamilyData(familyId, startMonth, signal) {
     api.get(`${prefix}/savings-goals/`, { signal }),
     api.get(`${prefix}/savings-movements/`, { signal }),
     matiasFund,
-    api.get(`${prefix}/matias-fund-movements/`, { signal }).catch((error) => error.response?.status === 404 ? { data: [] } : Promise.reject(error)),
-    api.post(`${prefix}/projections/scenario/`, { start_month: startMonth }, { signal })
+    api.get(`${prefix}/matias-fund-movements/`, { signal }).catch((error) => error.response?.status === 404 ? { data: [] } : Promise.reject(error))
   ]);
 
   return {
@@ -158,8 +167,7 @@ export async function getFamilyData(familyId, startMonth, signal) {
     savingsGoals: savingsGoals.data,
     savingsMovements: savingsMovements.data,
     matiasFund: fund.data,
-    matiasFundMovements: matiasFundMovements.data,
-    projection: projection.data
+    matiasFundMovements: matiasFundMovements.data
   };
 }
 

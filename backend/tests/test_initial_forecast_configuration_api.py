@@ -67,7 +67,11 @@ def configuration_payload(member_id, other_member_id):
         "savings_distribution": {
             "effective_date": "2026-01-01", "first_owner_id": member_id, "second_owner_id": other_member_id,
         },
-        "matias_fund": {"target_amount": "500.00", "projected_balance": "25.00"},
+        "matias_fund": {
+            "target_amount": "500.00", "projected_balance": "25.00",
+            "initial_contribution_total": "100.00", "monthly_simulated_expenditure": "25.00",
+            "monthly_replenishment_total": "30.00",
+        },
     }
 
 
@@ -106,6 +110,9 @@ def test_initial_configuration_creates_only_planning_data_and_audits(api_client,
     assert FreeMoneyAllowance.objects.count() == 1
     assert SavingsDistributionRule.objects.count() == 1
     assert MatiasFund.objects.get().projected_balance == Decimal("25.00")
+    assert MatiasFund.objects.get().initial_contribution_total == Decimal("100.00")
+    assert MatiasFund.objects.get().monthly_simulated_expenditure == Decimal("25.00")
+    assert MatiasFund.objects.get().monthly_replenishment_total == Decimal("30.00")
     assert SavingsMovement.objects.count() == 0
     assert MatiasFundMovement.objects.count() == 0
     assert goal.real_balance == Decimal("0.00")

@@ -21,3 +21,5 @@ frontend/blob-report/
 postgres-data/
 backups/
 .opencode/agents/
+.vercel
+.env*

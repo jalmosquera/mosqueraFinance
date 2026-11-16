@@ -50,3 +50,12 @@ class ProjectionScenarioSerializer(serializers.Serializer):
                     {field: "Each record can only be changed once per scenario."}
                 )
         return attrs
+
+
+class ApprovedForecastQuerySerializer(serializers.Serializer):
+    start_month = serializers.DateField()
+
+    def validate_start_month(self, value):
+        if value.day != 1:
+            raise serializers.ValidationError("Start month must be the first day of a month.")
+        return value

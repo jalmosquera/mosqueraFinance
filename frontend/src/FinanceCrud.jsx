@@ -16,11 +16,11 @@ import { hasExactAllocationTotal } from "./financeValidation";
 import { createInitialConfigurationTemplate } from "./initialConfiguration";
 import { requiresPrivacyConfirmation } from "./privacy";
 
-const fieldClass = "mt-2 block w-full rounded-xl border border-slate-700 bg-black px-3 py-3 text-base text-white outline-none focus:border-orange-300";
-const buttonClass = "rounded-xl bg-orange-300 px-3 py-3 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-60";
+const fieldClass = "mf-input";
+const buttonClass = "mf-button";
 
 function Panel({ title, children }) {
-  return <section className="rounded-[2rem] border border-slate-800 bg-slate-950 p-5"><h2 className="text-lg font-semibold text-white">{title}</h2>{children}</section>;
+  return <section className="mf-card mf-panel"><h2>{title}</h2>{children}</section>;
 }
 
 function Message({ error, success }) {
@@ -71,9 +71,10 @@ function RecordForm({ type, accounts, categories, memberships, sessionUser, reco
   </form>;
 }
 
-export function MovementManager({ type, records, accounts, categories, memberships, sessionUser, familyId, onChanged }) {
+export function MovementManager({ type, records, accounts, categories, memberships, sessionUser, familyId, onChanged, createRequested = 0 }) {
   const [editing, setEditing] = useState(null); const [creating, setCreating] = useState(false);
   const title = type === "income" ? "Ingresos confirmados" : "Gastos confirmados";
+  useEffect(() => { if (createRequested) { setEditing(null); setCreating(true); } }, [createRequested]);
   return <Panel title={title}><p className="mt-2 text-sm text-slate-400">Los movimientos confirmados no se eliminan: una corrección crea el reemplazo auditado y exige motivo.</p><div className="mt-4 divide-y divide-slate-800">{records.map((record) => <article className="py-3" key={record.id}><div className="flex justify-between gap-3"><div><p className="font-medium text-slate-200">{record.description || "Sin descripción"}</p><p className="text-xs text-slate-500">{formatDate(record.occurred_on)} · {record.status}</p></div><p className="font-semibold text-white">{formatMoney(record.amount)}</p></div>{record.status === "CONFIRMED" && <button className="mt-2 text-sm font-semibold text-orange-300" onClick={() => { setEditing(record); setCreating(false); }} type="button">Corregir</button>}</article>)}</div>{!creating && !editing && <button className={`${buttonClass} mt-4 w-full`} onClick={() => setCreating(true)} type="button">Registrar {type === "income" ? "ingreso" : "gasto"}</button>}{(creating || editing) && <RecordForm accounts={accounts} categories={categories} familyId={familyId} memberships={memberships} onCancel={() => { setCreating(false); setEditing(null); }} onSaved={() => { setCreating(false); setEditing(null); onChanged(); }} record={editing} sessionUser={sessionUser} type={type} />}</Panel>;
 }
 
@@ -122,6 +123,6 @@ export function InitialConfiguration({ familyId, memberships, isAdmin, onSaved }
   return <Panel title="Configuración inicial"><p className="mt-2 text-sm leading-6 text-slate-400">La plantilla incluye el único pronóstico compartido de Cigarettes: 186,00 EUR con dos asignaciones de 93,00 EUR. Completá o ajustá los pronósticos antes de guardar.</p>{!template ? <p className="mt-4 text-sm text-amber-200" role="alert">Se necesitan dos integrantes activos para configurar las asignaciones obligatorias de Cigarettes. Agregá el segundo integrante desde la administración controlada antes de continuar.</p> : <form className="mt-4" onSubmit={submit}><label className="block text-sm font-medium text-slate-300">Configuración inicial (JSON)<textarea aria-describedby="initial-configuration-help" className={`${fieldClass} min-h-64 font-mono text-xs`} onChange={(event) => setPayload(event.target.value)} value={payload} /></label><p className="mt-2 text-xs text-slate-500" id="initial-configuration-help">Usá la plantilla como punto de partida. Solo crea pronósticos y nunca movimientos confirmados.</p><label className="mt-3 flex gap-3 text-sm text-slate-300"><input checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} required type="checkbox" />Confirmo que los registros compartidos harán visible esa información a los integrantes autorizados.</label><button className={`${buttonClass} mt-4`} disabled={saving} type="submit">{saving ? "Configurando..." : "Guardar configuración inicial"}</button></form>}<Message error={error} /></Panel>;
 }
 
-export function FinanceCrud({ accounts, categories, data, familyId, isAdmin, memberships, onChanged, sessionUser, showMovements = true, showSavings = true }) {
-  return <div className="space-y-5">{showMovements && <><MovementManager accounts={accounts} categories={categories} familyId={familyId} memberships={memberships} onChanged={onChanged} records={data.incomeMovements} sessionUser={sessionUser} type="income" /><MovementManager accounts={accounts} categories={categories} familyId={familyId} memberships={memberships} onChanged={onChanged} records={data.expenseMovements} sessionUser={sessionUser} type="expense" /></>}{showSavings && <><SavingsManager familyId={familyId} goals={data.savingsGoals} movements={data.savingsMovements} onChanged={onChanged} sessionUser={sessionUser} /><MatiasManager familyId={familyId} fund={data.matiasFund} isAdmin={isAdmin} memberships={memberships} movements={data.matiasFundMovements} onChanged={onChanged} /><BudgetManager familyId={familyId} isAdmin={isAdmin} memberships={memberships} /></>}</div>;
+export function FinanceCrud({ accounts, categories, data, expenseCreationRequest, familyId, incomeCreationRequest, isAdmin, memberships, onChanged, sessionUser, showMovements = true, showSavings = true }) {
+  return <div className="space-y-5">{showMovements && <><MovementManager accounts={accounts} categories={categories} createRequested={incomeCreationRequest} familyId={familyId} memberships={memberships} onChanged={onChanged} records={data.incomeMovements} sessionUser={sessionUser} type="income" /><MovementManager accounts={accounts} categories={categories} createRequested={expenseCreationRequest} familyId={familyId} memberships={memberships} onChanged={onChanged} records={data.expenseMovements} sessionUser={sessionUser} type="expense" /></>}{showSavings && <><SavingsManager familyId={familyId} goals={data.savingsGoals} movements={data.savingsMovements} onChanged={onChanged} sessionUser={sessionUser} /><MatiasManager familyId={familyId} fund={data.matiasFund} isAdmin={isAdmin} memberships={memberships} movements={data.matiasFundMovements} onChanged={onChanged} /><BudgetManager familyId={familyId} isAdmin={isAdmin} memberships={memberships} /></>}</div>;
 }

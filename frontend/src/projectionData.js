@@ -1,48 +1,37 @@
 import { formatMonth } from "./formatDate";
 
-function cents(value) {
-  const normalized = String(value ?? "");
-  const match = normalized.match(/^(-?)(\d+)(?:\.(\d{1,2}))?$/);
-  if (!match) return 0n;
-  const [, sign, integer, decimal = ""] = match;
-  return BigInt(`${sign}${integer}${decimal.padEnd(2, "0")}`);
+function memberName(ownerId, memberships, currentUserId, role) {
+  if (role === "MEMBER" && ownerId === currentUserId) return "Tu ahorro personal";
+  const username = memberships.find((membership) => membership.user_id === ownerId)?.username;
+  return username ? `${username[0].toUpperCase()}${username.slice(1)}` : "Ahorro personal";
 }
 
-function money(value) {
-  const negative = value < 0n;
-  const absolute = negative ? -value : value;
-  return `${negative ? "-" : ""}${absolute / 100n}.${String(absolute % 100n).padStart(2, "0")}`;
-}
+export function mapApprovedForecast(forecast, { currentUserId, memberships = [] } = {}) {
+  if (!forecast) return null;
 
-// Chart coordinates are visual-only; all financial totals remain exact cents.
-function chartValue(value) {
-  return Number(cents(value)) / 100;
-}
-
-export function getProjectionSummary(projection, savingsGoals) {
-  const months = projection?.months || [];
-  const lastMonth = months.at(-1);
-  const targetCents = savingsGoals.reduce((total, goal) => total + cents(goal.target_amount), 0n);
-  const realCents = savingsGoals.reduce((total, goal) => total + cents(goal.real_balance), 0n);
-  const projectedCents = cents(lastMonth?.projected_savings_balance);
-  const contributionCents = months.reduce((total, month) => total + cents(month.savings_contribution), 0n);
+  const personalSavings = (forecast.personal_savings || []).map((saving) => ({
+    ...saving,
+    label: saving.owner_label?.label || memberName(saving.owner_id, memberships, currentUserId, forecast.role)
+  }));
+  const chart = (forecast.chart || []).map((month) => ({
+    ...month,
+    label: formatMonth(month.month.slice(0, 7)).slice(0, 3)
+  }));
+  const freeMoney = (forecast.free_money || []).find((allowance) => allowance.owner_id === currentUserId) || null;
 
   return {
-    months,
-    target: money(targetCents),
-    real: money(realCents),
-    projected: money(projectedCents),
-    projectedContribution: money(contributionCents),
-    progress: targetCents > 0n ? Math.min(Number((projectedCents * 10000n) / targetCents) / 100, 100) : 0
+    role: forecast.role,
+    visibility: forecast.visibility,
+    summary: forecast.summary || null,
+    chart,
+    personalSavings,
+    familySavings: forecast.family_savings ? { ...forecast.family_savings, label: forecast.family_savings.label || "Ahorro familiar" } : null,
+    distribution: forecast.distribution || null,
+    matiasPlan: forecast.matias_plan ? {
+      ...forecast.matias_plan,
+      initialContributionPerParent: forecast.matias_plan.initial_contribution_per_parent,
+      monthlyReplenishmentPerParent: forecast.matias_plan.monthly_replenishment_per_parent
+    } : null,
+    freeMoney
   };
-}
-
-export function getChartData(months) {
-  return months.map((month) => ({
-    label: formatMonth(month.month.slice(0, 7)).slice(0, 3),
-    income: chartValue(month.income),
-    expenses: chartValue(month.expenses),
-    savings: chartValue(month.savings_contribution),
-    balance: chartValue(month.projected_savings_balance)
-  }));
 }

@@ -17,7 +17,10 @@ def bootstrap_jalberth(*, email, password, family_name, actor=None):
         password=password,
         first_name="Jalberth",
     )
-    family = Family.objects.create(name=family_name)
+    family = Family.objects.create(
+        name=family_name,
+        household_aggregate_authority=user,
+    )
     membership = FamilyMembership.objects.create(
         family=family, user=user, role=FamilyMembership.Role.ADMIN
     )

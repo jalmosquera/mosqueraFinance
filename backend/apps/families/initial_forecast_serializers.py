@@ -105,6 +105,9 @@ class DistributionInputSerializer(serializers.Serializer):
 class MatiasFundInputSerializer(serializers.Serializer):
     target_amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"))
     projected_balance = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.00"), default=Decimal("0.00"))
+    initial_contribution_total = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.00"), default=Decimal("0.00"))
+    monthly_simulated_expenditure = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.00"), default=Decimal("0.00"))
+    monthly_replenishment_total = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.00"), default=Decimal("0.00"))
 
 
 class InitialForecastConfigurationSerializer(serializers.Serializer):

@@ -29,6 +29,7 @@ def test_staff_only_bootstrap_creates_jalberth_family_and_no_financial_values(ap
     jalberth = User.objects.get(username="jalberth")
     family = Family.objects.get(name="Mosquera Alves")
     assert FamilyMembership.objects.get(family=family, user=jalberth).role == FamilyMembership.Role.ADMIN
+    assert family.household_aggregate_authority == jalberth
     assert MonthlyBudgetForecast.objects.count() == 0
     assert AuditLog.objects.filter(action="family.bootstrap_created", family=family).exists()
 

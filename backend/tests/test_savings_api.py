@@ -105,7 +105,17 @@ def test_matias_fund_is_shared_and_replenishment_is_not_savings_or_consumption(a
     data = savings_records
     api_client.force_authenticate(data["jalberth"])
     fund_url = f"/api/v1/families/{data['family'].pk}/matias-fund/"
-    create_response = api_client.post(fund_url, {"target_amount": "1000.00", "projected_balance": "500.00"}, format="json")
+    create_response = api_client.post(
+        fund_url,
+        {
+            "target_amount": "1000.00",
+            "projected_balance": "500.00",
+            "initial_contribution_total": "100.00",
+            "monthly_simulated_expenditure": "30.00",
+            "monthly_replenishment_total": "30.00",
+        },
+        format="json",
+    )
     fund = MatiasFund.objects.get(family=data["family"])
     movements_url = f"/api/v1/families/{data['family'].pk}/matias-fund-movements/"
     payload = {
@@ -124,7 +134,13 @@ def test_matias_fund_is_shared_and_replenishment_is_not_savings_or_consumption(a
     assert movement_response.status_code == status.HTTP_201_CREATED
     assert api_client.get(fund_url).status_code == status.HTTP_200_OK
     assert api_client.get(movements_url).data[0]["kind"] == "REPLENISHMENT"
+    assert api_client.get(movements_url).data[0]["allocations"] == [
+        {"contributor_id": data["raiza"].pk, "amount": "50.00"}
+    ]
     assert fund.real_balance == Decimal("100.00")
+    assert fund.initial_contribution_total == Decimal("100.00")
+    assert fund.monthly_simulated_expenditure == Decimal("30.00")
+    assert fund.monthly_replenishment_total == Decimal("30.00")
     assert SavingsMovement.objects.count() == 0
     assert ExpenseMovement.objects.count() == 0
     allocation = MatiasFundAllocation.objects.filter(
@@ -135,10 +151,34 @@ def test_matias_fund_is_shared_and_replenishment_is_not_savings_or_consumption(a
         allocation.delete()
 
 
+def test_matias_fund_configuration_rejects_negative_planning_values(api_client, savings_records):
+    data = savings_records
+    api_client.force_authenticate(data["jalberth"])
+
+    response = api_client.post(
+        f"/api/v1/families/{data['family'].pk}/matias-fund/",
+        {
+            "target_amount": "1000.00",
+            "initial_contribution_total": "-0.01",
+            "monthly_simulated_expenditure": "-0.01",
+            "monthly_replenishment_total": "-0.01",
+        },
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert set(response.data) == {
+        "initial_contribution_total",
+        "monthly_simulated_expenditure",
+        "monthly_replenishment_total",
+    }
+    assert MatiasFund.objects.count() == 0
+
+
 def test_matias_fund_rejects_non_exact_contributor_allocations(api_client, savings_records):
     data = savings_records
     fund = MatiasFund.objects.create(family=data["family"], target_amount="1000.00")
-    api_client.force_authenticate(data["raiza"])
+    api_client.force_authenticate(data["jalberth"])
 
     response = api_client.post(
         f"/api/v1/families/{data['family'].pk}/matias-fund-movements/",
@@ -146,7 +186,7 @@ def test_matias_fund_rejects_non_exact_contributor_allocations(api_client, savin
             "kind": "INITIAL_CONTRIBUTION",
             "amount": "100.00",
             "occurred_on": "2026-12-01",
-            "allocations": [{"contributor_id": data["raiza"].pk, "amount": "99.99"}],
+            "allocations": [{"contributor_id": data["jalberth"].pk, "amount": "99.99"}],
         },
         format="json",
     )
@@ -154,3 +194,145 @@ def test_matias_fund_rejects_non_exact_contributor_allocations(api_client, savin
     assert fund.real_balance == Decimal("0.00")
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert MatiasFundMovement.objects.count() == 0
+
+
+def test_non_authority_cannot_configure_matias_fund_even_if_an_admin(api_client, savings_records):
+    data = savings_records
+    membership = data["family"].memberships.get(user=data["raiza"])
+    membership.role = "ADMIN"
+    membership.save(update_fields=("role",))
+    api_client.force_authenticate(data["raiza"])
+
+    response = api_client.post(
+        f"/api/v1/families/{data['family'].pk}/matias-fund/",
+        {"target_amount": "1000.00"},
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert MatiasFund.objects.count() == 0
+
+
+def test_non_authority_cannot_forge_matias_contributor_or_mutate_movements(api_client, savings_records):
+    data = savings_records
+    fund = MatiasFund.objects.create(family=data["family"], target_amount="1000.00")
+    movement = MatiasFundMovement.objects.create(
+        fund=fund,
+        kind="INITIAL_CONTRIBUTION",
+        amount="100.00",
+        occurred_on="2026-12-01",
+    )
+    MatiasFundAllocation.objects.create(
+        movement=movement,
+        contributor=data["jalberth"],
+        amount="100.00",
+    )
+    api_client.force_authenticate(data["raiza"])
+    movements_url = f"/api/v1/families/{data['family'].pk}/matias-fund-movements/"
+    forged_create = api_client.post(
+        movements_url,
+        {
+            "kind": "REPLENISHMENT",
+            "amount": "100.00",
+            "occurred_on": "2026-12-02",
+            "allocations": [{"contributor_id": data["jalberth"].pk, "amount": "100.00"}],
+        },
+        format="json",
+    )
+    void_response = api_client.post(f"{movements_url}{movement.pk}/void/", {"reason": "Forged"}, format="json")
+    correction_response = api_client.post(
+        f"{movements_url}{movement.pk}/correct/",
+        {
+            "reason": "Forged",
+            "kind": "INITIAL_CONTRIBUTION",
+            "amount": "120.00",
+            "occurred_on": "2026-12-01",
+            "allocations": [{"contributor_id": data["jalberth"].pk, "amount": "120.00"}],
+        },
+        format="json",
+    )
+
+    movement.refresh_from_db()
+    assert forged_create.status_code == status.HTTP_403_FORBIDDEN
+    assert void_response.status_code == status.HTTP_403_FORBIDDEN
+    assert correction_response.status_code == status.HTTP_403_FORBIDDEN
+    assert movement.status == "CONFIRMED"
+    assert MatiasFundMovement.objects.count() == 1
+
+
+def test_household_aggregate_authority_can_manage_matias_movements_and_see_all_allocations(api_client, savings_records):
+    data = savings_records
+    fund = MatiasFund.objects.create(family=data["family"], target_amount="1000.00")
+    api_client.force_authenticate(data["jalberth"])
+    movements_url = f"/api/v1/families/{data['family'].pk}/matias-fund-movements/"
+    create_response = api_client.post(
+        movements_url,
+        {
+            "kind": "INITIAL_CONTRIBUTION",
+            "amount": "100.00",
+            "occurred_on": "2026-12-01",
+            "allocations": [
+                {"contributor_id": data["jalberth"].pk, "amount": "60.00"},
+                {"contributor_id": data["raiza"].pk, "amount": "40.00"},
+            ],
+        },
+        format="json",
+    )
+    movement_id = create_response.data["id"]
+    void_response = api_client.post(
+        f"{movements_url}{movement_id}/void/", {"reason": "Duplicate"}, format="json"
+    )
+
+    assert create_response.status_code == status.HTTP_201_CREATED
+    assert create_response.data["allocations"] == [
+        {"contributor_id": data["jalberth"].pk, "amount": "60.00"},
+        {"contributor_id": data["raiza"].pk, "amount": "40.00"},
+    ]
+    assert void_response.status_code == status.HTTP_200_OK
+    assert fund.real_balance == Decimal("0.00")
+
+
+def test_non_authority_cannot_create_or_update_shared_savings_goals(api_client, savings_records):
+    data = savings_records
+    shared_goal = SavingsGoal.objects.create(family=data["family"], name="Shared", target_amount="1000.00")
+    api_client.force_authenticate(data["raiza"])
+    goals_url = f"/api/v1/families/{data['family'].pk}/savings-goals/"
+    create_response = api_client.post(
+        goals_url,
+        {"name": "Forged shared", "target_amount": "1000.00"},
+        format="json",
+    )
+    update_response = api_client.patch(
+        f"{goals_url}{shared_goal.pk}/", {"target_amount": "2000.00"}, format="json"
+    )
+
+    shared_goal.refresh_from_db()
+    assert create_response.status_code == status.HTTP_403_FORBIDDEN
+    assert update_response.status_code == status.HTTP_403_FORBIDDEN
+    assert shared_goal.target_amount == Decimal("1000.00")
+
+
+def test_member_can_create_and_update_own_private_savings_goal(api_client, savings_records):
+    data = savings_records
+    api_client.force_authenticate(data["raiza"])
+    goals_url = f"/api/v1/families/{data['family'].pk}/savings-goals/"
+
+    create_response = api_client.post(
+        goals_url,
+        {
+            "owner_id": data["raiza"].pk,
+            "name": "Raiza private",
+            "target_amount": "1000.00",
+        },
+        format="json",
+    )
+    update_response = api_client.patch(
+        f"{goals_url}{create_response.data['id']}/",
+        {"target_amount": "1200.00"},
+        format="json",
+    )
+
+    assert create_response.status_code == status.HTTP_201_CREATED
+    assert update_response.status_code == status.HTTP_200_OK
+    assert update_response.data["owner_id"] == data["raiza"].pk
+    assert update_response.data["target_amount"] == "1200.00"

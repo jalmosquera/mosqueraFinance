@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -123,3 +124,12 @@ class CorrectExpenseMovementSerializer(ExpenseMovementSerializer):
 
     class Meta(ExpenseMovementSerializer.Meta):
         fields = ExpenseMovementSerializer.Meta.fields + ("reason",)
+
+
+class ExpenseDashboardMonthSerializer(serializers.Serializer):
+    month = serializers.DateField(required=False, default=lambda: date.today().replace(day=1))
+
+    def validate_month(self, value):
+        if value.day != 1:
+            raise serializers.ValidationError("Month must be the first day of a month.")
+        return value

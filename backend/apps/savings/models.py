@@ -156,6 +156,15 @@ class MatiasFund(models.Model):
     family = models.OneToOneField("families.Family", on_delete=models.CASCADE, related_name="matias_fund")
     target_amount = models.DecimalField(max_digits=14, decimal_places=2)
     projected_balance = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    initial_contribution_total = models.DecimalField(
+        max_digits=14, decimal_places=2, default=Decimal("0.00")
+    )
+    monthly_simulated_expenditure = models.DecimalField(
+        max_digits=14, decimal_places=2, default=Decimal("0.00")
+    )
+    monthly_replenishment_total = models.DecimalField(
+        max_digits=14, decimal_places=2, default=Decimal("0.00")
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -163,6 +172,9 @@ class MatiasFund(models.Model):
         constraints = [
             models.CheckConstraint(condition=Q(target_amount__gt=0), name="matias_fund_target_positive"),
             models.CheckConstraint(condition=Q(projected_balance__gte=0), name="matias_fund_projected_balance_nonnegative"),
+            models.CheckConstraint(condition=Q(initial_contribution_total__gte=0), name="matias_fund_initial_contribution_nonnegative"),
+            models.CheckConstraint(condition=Q(monthly_simulated_expenditure__gte=0), name="matias_fund_monthly_expenditure_nonnegative"),
+            models.CheckConstraint(condition=Q(monthly_replenishment_total__gte=0), name="matias_fund_monthly_replenishment_nonnegative"),
         ]
 
     @property

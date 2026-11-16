@@ -16,6 +16,14 @@ class FamilyManager(models.Manager.from_queryset(FamilyQuerySet)):
 
 class Family(models.Model):
     name = models.CharField(max_length=120)
+    # This authority is assigned only by bootstrap; membership roles cannot grant it.
+    household_aggregate_authority = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="household_aggregate_authority_families",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     objects = FamilyManager()
@@ -45,6 +53,13 @@ class FamilyMembershipQuerySet(models.QuerySet):
     def active_admin_for(self, user, family):
         return self.active().filter(
             user=user, family=family, role=FamilyMembership.Role.ADMIN
+        )
+
+    def household_aggregate_authority_for(self, user, family):
+        return self.active().filter(
+            user=user,
+            family=family,
+            family__household_aggregate_authority=user,
         )
 
 

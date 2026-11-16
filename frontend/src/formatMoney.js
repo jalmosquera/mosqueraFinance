@@ -1,3 +1,10 @@
+const eurFormatter = new Intl.NumberFormat("es-ES", {
+  style: "currency",
+  currency: "EUR",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
+
 export function formatMoney(amount) {
   if (typeof amount !== "string" && typeof amount !== "number") {
     return null;
@@ -8,8 +15,5 @@ export function formatMoney(amount) {
     return null;
   }
 
-  const negative = value.startsWith("-");
-  const [integer, decimal = ""] = (negative ? value.slice(1) : value).split(".");
-  const groupedInteger = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  return `${negative ? "-" : ""}${groupedInteger},${decimal.padEnd(2, "0")} €`;
+  return eurFormatter.format(Number(value));
 }

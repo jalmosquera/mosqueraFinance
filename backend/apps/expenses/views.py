@@ -6,6 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.audit.services import record_entity_mutation
 from apps.families.models import Family
@@ -13,9 +14,11 @@ from apps.obligations.services import (
     preserve_historical_occurrences_before_forecast_edit,
 )
 
+from .dashboard import build_expense_dashboard
 from .models import ExpenseForecast, ExpenseMovement
 from .serializers import (
     CorrectExpenseMovementSerializer,
+    ExpenseDashboardMonthSerializer,
     ExpenseForecastSerializer,
     ExpenseMovementSerializer,
 )
@@ -127,4 +130,20 @@ class ExpenseMovementViewSet(FamilyScopedExpenseViewSet):
                 "replacement": self.get_serializer(replacement).data,
             },
             status=status.HTTP_201_CREATED,
+        )
+
+
+class ExpenseDashboardView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def get(self, request, family_pk):
+        family = get_object_or_404(Family.objects.visible_to(request.user), pk=family_pk)
+        serializer = ExpenseDashboardMonthSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        return Response(
+            build_expense_dashboard(
+                family=family,
+                user=request.user,
+                month=serializer.validated_data["month"],
+            )
         )
